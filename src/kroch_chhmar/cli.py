@@ -128,6 +128,8 @@ def cmd_prepare(
                     "data_km.km-tok.nova",
                     "data_km.km-tag.nova",
                     "README.txt",
+                    "khpos_open_test.pos",
+                    "khpos_close_test.pos",
                 ):
                     continue
                 if f.name == "RAC-Khmer-Dict-2022.csv":

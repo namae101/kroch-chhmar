@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.png" alt="kroch-chhmar logo" width="260" />
+</p>
+
 # Kroch-Chhmar (ក្រូចឆ្មារ) 🍋‍🟩
 
 > *Named after **ក្រូចឆ្មារ** (`kroch chhmar`, Khmer lime) — a playful Khmer citrus nod to [**Sudachi**](https://github.com/WorksApplications/sudachi.rs) (酢橘, Japanese green citrus).*

@@ -181,6 +181,12 @@ def ingest_segmented_text_file(
                 else:
                     raw_surf, raw_pos = tok, None
 
+                # Strip khPOS bound derivational suffix marker '^' so bound stems
+                # (e.g., `សេដ្ឋ^កិច្ច` -> `សេដ្ឋកិច្ច`, `កសិ^កម្ម` -> `កសិកម្ម`) stay intact
+                # as single lexical words instead of polluting base_vocab with bound stems (`កសិ`, `សេដ្ឋ`).
+                if "^" in raw_surf and len(raw_surf) > 1:
+                    raw_surf = raw_surf.replace("^", "")
+
                 # Handle khPOS compound sub-token separators ('_' and '~')
                 if ("_" in raw_surf or "~" in raw_surf) and len(raw_surf) > 1:
                     sub_parts = [

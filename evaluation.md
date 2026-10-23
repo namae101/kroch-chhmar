@@ -50,6 +50,7 @@ uv run kroch-chhmar evaluate -f data/seed/seed_corpus.txt --mode C
 To evaluate segmentation without bias, the evaluator concatenates the gold tokens of each sentence into a raw unsegmented Khmer string, runs `KhmerTokenizer`, and compares the **character offset spans `(start, end)`** of every predicted token against the gold tokens:
 
 1. **`Gold Tokens`**: Total number of words in the human-annotated reference test set.
+   - Bound derivational suffix markers (`^`, such as `សេដ្ឋ^កិច្ច`, `ពាណិជ្ជ^កម្ម`, `ជីវ^ភាព`) are always joined into their canonical Khmer lexical form (`សេដ្ឋកិច្ច`, `ពាណិជ្ជកម្ម`, `ជីវភាព`).
    - Under **Compounds Joined** (`--join-compounds`), words linked by `_` or `~` in `khPOS` (e.g., `ក្រៅ_ពី`, `លោក~ស្រី`, `ការ~សិក្សា`) count as a single compound word (`10,778` tokens in `OPEN-TEST`).
    - Under **Base Words Split** (`--split-compounds`), `_` and `~` are split into their constituent base words (`12,931` tokens in `OPEN-TEST`).
 2. **`Predicted Tokens`**: Total number of tokens produced by `kroch-chhmar`:
@@ -73,15 +74,15 @@ To evaluate segmentation without bias, the evaluator concatenates the gold token
 
 | Test Set | Gold Standard Granularity | Mode | Gold Tokens | Pred Tokens | Precision | Recall | **F1 Score** | OOV Rate | **KCC Violation Rate** |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **`OPEN-TEST`** *(1k sents)* | **Base Words (`_` & `~` split)** | **Mode A** | 12,931 | 12,464 | **87.51%** | **84.35%** | **85.90%** | 3.07% | **0.00%** |
-| **`OPEN-TEST`** *(1k sents)* | **Base Words (`_` & `~` split)** | Mode B | 12,931 | 11,019 | 79.19% | 67.48% | 72.87% | 3.48% | **0.00%** |
-| **`OPEN-TEST`** *(1k sents)* | **Base Words (`_` & `~` split)** | Mode C | 12,931 | 10,217 | 75.84% | 59.93% | 66.95% | 3.75% | **0.00%** |
-| **`OPEN-TEST`** *(1k sents)* | **Compounds (`_` & `~` joined)** | **Mode C** | 10,778 | 10,217 | **86.34%** | **81.84%** | **84.03%** | 3.75% | **0.00%** |
-| **`OPEN-TEST`** *(1k sents)* | **Compounds (`_` & `~` joined)** | Mode B | 10,778 | 11,019 | 81.52% | 83.35% | 82.42% | 3.48% | **0.00%** |
-| **`OPEN-TEST`** *(1k sents)* | **Compounds (`_` & `~` joined)** | Mode A | 10,778 | 12,464 | 70.00% | 80.95% | 75.08% | 3.07% | **0.00%** |
-| **`CLOSE-TEST`** *(1k sents)* | **Base Words (`_` & `~` split)** | **Mode A** | 12,467 | 12,003 | **88.35%** | **85.06%** | **86.68%** | 2.66% | **0.00%** |
-| **`CLOSE-TEST`** *(1k sents)* | **Compounds (`_` & `~` joined)** | **Mode C** | 10,397 | 9,782 | **87.10%** | **81.95%** | **84.44%** | 3.26% | **0.00%** |
-| **`CLOSE-TEST`** *(1k sents)* | **Compounds (`_` & `~` joined)** | Mode B | 10,397 | 10,570 | 82.26% | 83.63% | 82.94% | 3.02% | **0.00%** |
+| **`OPEN-TEST`** *(1k sents)* | **Base Words (`_` & `~` split)** | **Mode A** | 12,931 | 12,488 | **87.20%** | **84.22%** | **85.68%** | 3.04% | **0.00%** |
+| **`OPEN-TEST`** *(1k sents)* | **Base Words (`_` & `~` split)** | Mode B | 12,931 | 11,032 | 79.13% | 67.51% | 72.86% | 3.44% | **0.00%** |
+| **`OPEN-TEST`** *(1k sents)* | **Base Words (`_` & `~` split)** | Mode C | 12,931 | 10,205 | 75.85% | 59.86% | 66.92% | 3.72% | **0.00%** |
+| **`OPEN-TEST`** *(1k sents)* | **Compounds (`_` & `~` joined)** | **Mode C** | 10,778 | 10,205 | **86.37%** | **81.78%** | **84.01%** | 3.72% | **0.00%** |
+| **`OPEN-TEST`** *(1k sents)* | **Compounds (`_` & `~` joined)** | Mode B | 10,778 | 11,032 | 81.32% | 83.23% | 82.27% | 3.44% | **0.00%** |
+| **`OPEN-TEST`** *(1k sents)* | **Compounds (`_` & `~` joined)** | Mode A | 10,778 | 12,488 | 69.76% | 80.83% | 74.89% | 3.04% | **0.00%** |
+| **`CLOSE-TEST`** *(1k sents)* | **Base Words (`_` & `~` split)** | **Mode A** | 12,467 | 12,022 | **88.12%** | **84.98%** | **86.52%** | 2.65% | **0.00%** |
+| **`CLOSE-TEST`** *(1k sents)* | **Compounds (`_` & `~` joined)** | **Mode C** | 10,397 | 9,777 | **87.04%** | **81.85%** | **84.37%** | 3.26% | **0.00%** |
+| **`CLOSE-TEST`** *(1k sents)* | **Compounds (`_` & `~` joined)** | Mode B | 10,397 | 10,582 | 82.13% | 83.59% | 82.85% | 3.01% | **0.00%** |
 
 ### 3.2 Vocabulary Extension & Domain-Aligned Dictionary Evaluation
 *(Demonstrating the impact of extending the dictionary with domain vocabulary / test sentences)*:
@@ -92,10 +93,10 @@ To evaluate segmentation without bias, the evaluator concatenates the gold token
 | **`khPOS`-Aligned Dict** | **`OPEN-TEST`** | Base Words (`_` & `~` split) | **Mode A** | **93.47%** | **96.34%** | **94.89%** | **0** | **0.27s** |
 | **`khPOS`-Aligned Dict** | **`CLOSE-TEST`** | Compounds (`_` & `~` joined) | **Mode C** | **98.67%** | **97.81%** | **98.24%** | **0** | **0.28s** |
 | **`khPOS`-Aligned Dict** | **`CLOSE-TEST`** | Base Words (`_` & `~` split) | **Mode A** | **93.15%** | **96.13%** | **94.62%** | **0** | **0.27s** |
-| **Full 4-Dataset 100k Dict (Extended)** | **`OPEN-TEST`** | Base Words (`_` & `~` split) | **Mode A** | **88.00%** | **84.60%** | **86.26%** | **0** | **0.28s** |
-| **Full 4-Dataset 100k Dict (Extended)** | **`OPEN-TEST`** | Compounds (`_` & `~` joined) | **Mode C** | **87.44%** | **82.29%** | **84.79%** | **0** | **0.30s** |
-| **Full 4-Dataset 100k Dict (Extended)** | **`CLOSE-TEST`** | Base Words (`_` & `~` split) | **Mode A** | **88.46%** | **85.14%** | **86.77%** | **0** | **0.27s** |
-| **Full 4-Dataset 100k Dict (Extended)** | **`CLOSE-TEST`** | Compounds (`_` & `~` joined) | **Mode C** | **87.10%** | **81.95%** | **84.44%** | **0** | **0.29s** |
+| **Full 4-Dataset 100k Dict (Extended)** | **`OPEN-TEST`** | Base Words (`_` & `~` split) | **Mode A** | **87.57%** | **84.36%** | **85.93%** | **0** | **0.28s** |
+| **Full 4-Dataset 100k Dict (Extended)** | **`OPEN-TEST`** | Compounds (`_` & `~` joined) | **Mode C** | **87.41%** | **82.21%** | **84.73%** | **0** | **0.30s** |
+| **Full 4-Dataset 100k Dict (Extended)** | **`CLOSE-TEST`** | Base Words (`_` & `~` split) | **Mode A** | **88.07%** | **84.90%** | **86.45%** | **0** | **0.27s** |
+| **Full 4-Dataset 100k Dict (Extended)** | **`CLOSE-TEST`** | Compounds (`_` & `~` joined) | **Mode C** | **87.04%** | **81.85%** | **84.37%** | **0** | **0.29s** |
 
 ---
 

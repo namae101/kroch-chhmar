@@ -37,9 +37,11 @@ def _tokens_to_spans(tokens: list[str]) -> set[tuple[int, int]]:
 
 def _clean_gold_token(raw_tok: str, split_compounds: bool = False) -> list[str]:
     """
-    Strip optional `/POS` suffix and normalize `khPOS` compound separators (`_` and `~`).
-    If `split_compounds=False` (default), `_` and `~` are joined into a single compound token.
-    If `split_compounds=True`, `_` and `~` are split into sub-tokens.
+    Strip optional `/POS` suffix and normalize `khPOS` compound/derivation separators (`_`, `~`, and `^`).
+    - `^` marks a bound derivational suffix (e.g. `សេដ្ឋ^កិច្ច` -> `សេដ្ឋកិច្ច`, `ពាណិជ្ជ^កម្ម` -> `ពាណិជ្ជកម្ម`),
+      which is always joined into a single word in real Khmer text.
+    - If `split_compounds=False` (default), `_` and `~` are also joined into a single compound token.
+    - If `split_compounds=True`, `_` and `~` are split into sub-tokens (while `^` stays joined on the stem).
     """
     if "/" in raw_tok and len(raw_tok) > 1 and not raw_tok.startswith("/"):
         surf = raw_tok.rsplit("/", 1)[0].strip()
@@ -48,6 +50,10 @@ def _clean_gold_token(raw_tok: str, split_compounds: bool = False) -> list[str]:
 
     if not surf:
         return []
+
+    # Strip `^` derivational marker so `ពាណិជ្ជ^កម្ម` -> `ពាណិជ្ជកម្ម` and `ឯក_រាជ្យ^ភាព` -> `ឯក_រាជ្យភាព`
+    if "^" in surf and len(surf) > 1:
+        surf = surf.replace("^", "")
 
     if ("_" in surf or "~" in surf) and len(surf) > 1:
         import re

@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from sudachi_khmer.dictionary.compound_splitter import CompoundSplitter
+from kroch_chhmar.dictionary.compound_splitter import CompoundSplitter
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 

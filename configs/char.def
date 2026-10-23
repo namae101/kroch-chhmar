@@ -1,4 +1,4 @@
-# Character Category Definition for Sudachi-Khmer
+# Character Category Definition for Kroch-Chhmar
 # Format: CATEGORY_NAME INVOKE GROUP LENGTH
 # Built-in sudachi.rs categories:
 # DEFAULT, SPACE, KANJI, SYMBOL, NUMERIC, ALPHA, HIRAGANA, KATAKANA, KANJINUMERIC, GREEK, CYRILLIC

@@ -1,4 +1,4 @@
-# Seed Segmented Khmer Corpus for Sudachi-Khmer
+# Seed Segmented Khmer Corpus for Kroch-Chhmar
 # Format: space-separated word/POS or plain words
 ខ្ញុំ/PRON ស្រឡាញ់/VERB ប្រទេសកម្ពុជា/PROPN ណាស់/ADV ។/PUNCT
 សិស្ស/NOUN ទៅ/VERB សាលារៀន/NOUN នៅ/ADP ពេល/NOUN ព្រឹក/NOUN ។/PUNCT

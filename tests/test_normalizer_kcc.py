@@ -1,6 +1,6 @@
 """Tests for Khmer Unicode canonicalization (betterkhmer) and Khmer Character Cluster (KCC) boundaries."""
 
-from sudachi_khmer.normalizer import (
+from kroch_chhmar.normalizer import (
     count_kccs,
     get_kcc_boundaries,
     is_kcc_boundary,

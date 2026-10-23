@@ -1,4 +1,4 @@
-"""CLI workflow for Sudachi-Khmer: fetch, prepare, build, ubuild, tokenize, and evaluate."""
+"""CLI workflow for Kroch-Chhmar: fetch, prepare, build, ubuild, tokenize, and evaluate."""
 
 from __future__ import annotations
 
@@ -9,16 +9,16 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from sudachi_khmer.dictionary.compound_splitter import CompoundSplitter
-from sudachi_khmer.dictionary.cost_estimator import CostEstimator
-from sudachi_khmer.dictionary.csv_writer import (
+from kroch_chhmar.dictionary.compound_splitter import CompoundSplitter
+from kroch_chhmar.dictionary.cost_estimator import CostEstimator
+from kroch_chhmar.dictionary.csv_writer import (
     build_system_dic,
     build_user_dic,
     generate_sudachi_entries,
     write_sudachi_csv,
 )
-from sudachi_khmer.evaluate import evaluate_segmentation, load_gold_sentences
-from sudachi_khmer.ingest.local_importers import (
+from kroch_chhmar.evaluate import evaluate_segmentation, load_gold_sentences
+from kroch_chhmar.ingest.local_importers import (
     ingest_alt_nova_files,
     ingest_conllu_file,
     ingest_lexicon_tsv,
@@ -26,11 +26,11 @@ from sudachi_khmer.ingest.local_importers import (
     ingest_segmented_text_file,
     load_seed_dataset,
 )
-from sudachi_khmer.ingest.public_datasets import PUBLIC_SOURCES, fetch_public_dataset
-from sudachi_khmer.tokenizer import KhmerTokenizer, SplitMode
+from kroch_chhmar.ingest.public_datasets import PUBLIC_SOURCES, fetch_public_dataset
+from kroch_chhmar.tokenizer import KhmerTokenizer, SplitMode
 
 app = typer.Typer(
-    name="sudachi-khmer",
+    name="kroch-chhmar",
     help="Workflow for generating Sudachi-compatible Khmer dictionaries and KCC-aware word segmentation.",
     add_completion=False,
 )
@@ -296,7 +296,7 @@ def cmd_tokenize(
     )
     morphemes = tokenizer.tokenize(text, mode=mode)
 
-    table = Table(title=f"Sudachi-Khmer Segmentation (Mode {mode.value})")
+    table = Table(title=f"Kroch-Chhmar Segmentation (Mode {mode.value})")
     table.add_column("#", justify="right", style="dim")
     table.add_column("Surface", style="bold cyan")
     table.add_column("Normalized", style="green")

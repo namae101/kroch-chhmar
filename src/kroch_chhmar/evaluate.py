@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from sudachi_khmer.normalizer import get_kcc_boundaries, normalize_khmer
-from sudachi_khmer.tokenizer import KhmerTokenizer, SplitMode
+from kroch_chhmar.normalizer import get_kcc_boundaries, normalize_khmer
+from kroch_chhmar.tokenizer import KhmerTokenizer, SplitMode
 
 
 @dataclass

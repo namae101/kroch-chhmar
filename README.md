@@ -1,4 +1,6 @@
-# Sudachi-Khmer
+# Kroch-Chhmar (ក្រូចឆ្មារ) 🍋‍🟩
+
+> *Named after **ក្រូចឆ្មារ** (`kroch chhmar`, Khmer lime) — a playful Khmer citrus nod to [**Sudachi**](https://github.com/WorksApplications/sudachi.rs) (酢橘, Japanese green citrus).*
 
 A reproducible Python workflow for generating **Sudachi-compatible Khmer binary dictionaries** (`system_khmer.dic` and `user_khmer.dic`) and a **Khmer Character Cluster (KCC)-aware word segmentation plugin/wrapper** for [`SudachiPy`](https://github.com/WorksApplications/sudachi.rs).
 
@@ -23,7 +25,7 @@ Full architectural details are documented in [`plan/implementation_plan.md`](pla
 
 ## Datasets & Upstream Sources
 
-`sudachi-khmer` includes automated downloaders (`sudachi-khmer fetch`) and parsers for the following open Khmer datasets:
+`kroch-chhmar` includes automated downloaders (`kroch-chhmar fetch`) and parsers for the following open Khmer datasets:
 
 | Dataset Key | Source / Link | Description | Upstream License / Terms |
 | :--- | :--- | :--- | :--- |
@@ -45,37 +47,37 @@ Also incorporates the regex-free Khmer Unicode normalizer from:
 
 ```bash
 # Download all 4 primary datasets (khpos, alt-km-nova, khmerlbdict, khmer-dictionary-44k)
-uv run sudachi-khmer fetch all
+uv run kroch-chhmar fetch all
 
 # Normalize with BetterKhmer, deduplicate into data/interim/, generate lex.csv + matrix.def, and compile system_khmer.dic
-uv run sudachi-khmer prepare
-uv run sudachi-khmer build
+uv run kroch-chhmar prepare
+uv run kroch-chhmar build
 ```
 
 ### 2. Segment Khmer Text (Modes C, B, A)
 
 ```bash
-uv run sudachi-khmer tokenize "ព្រះរាជាណាចក្រកម្ពុជាមានការសិក្សានិងការអភិវឌ្ឍល្អ។" --mode C
-uv run sudachi-khmer tokenize "ព្រះរាជាណាចក្រកម្ពុជាមានការសិក្សានិងការអភិវឌ្ឍល្អ។" --mode B
-uv run sudachi-khmer tokenize "ព្រះរាជាណាចក្រកម្ពុជាមានការសិក្សានិងការអភិវឌ្ឍល្អ។" --mode A
+uv run kroch-chhmar tokenize "ព្រះរាជាណាចក្រកម្ពុជាមានការសិក្សានិងការអភិវឌ្ឍល្អ។" --mode C
+uv run kroch-chhmar tokenize "ព្រះរាជាណាចក្រកម្ពុជាមានការសិក្សានិងការអភិវឌ្ឍល្អ។" --mode B
+uv run kroch-chhmar tokenize "ព្រះរាជាណាចក្រកម្ពុជាមានការសិក្សានិងការអភិវឌ្ឍល្អ។" --mode A
 ```
 
 ### 3. Build a Custom User Dictionary
 
 ```bash
-uv run sudachi-khmer ubuild path/to/custom_words.tsv -o data/build/user_khmer.dic
+uv run kroch-chhmar ubuild path/to/custom_words.tsv -o data/build/user_khmer.dic
 ```
 
 ### 4. Evaluate Segmentation Benchmark
 
 ```bash
-uv run sudachi-khmer evaluate --mode C
+uv run kroch-chhmar evaluate --mode C
 ```
 
 ### 5. Python API Usage
 
 ```python
-from sudachi_khmer import KhmerTokenizer, SplitMode
+from kroch_chhmar import KhmerTokenizer, SplitMode
 
 tokenizer = KhmerTokenizer()
 
@@ -97,7 +99,7 @@ uv run --with pytest pytest -v
 
 ## License
 
-The source code of `sudachi-khmer` is licensed under the **[MIT License](LICENSE)**.
+The source code of `kroch-chhmar` is licensed under the **[MIT License](LICENSE)**.
 
 > **Dataset Licensing Notice**: Compiled dictionary artifacts (`.dic`, `.csv`, `matrix.def`) built using third-party datasets (`khPOS`, NICT `ALT Khmer NOVA`, `RAC Khmer Dictionary 2022`) inherit the respective terms of those upstream datasets (such as **CC BY-NC-SA 4.0** / **Research & Non-Commercial Use**). For commercial deployments, build the dictionary using only permissively licensed datasets (e.g., `khmerlbdict` + your own proprietary or permissive corpora). See [`LICENSE`](LICENSE) for full details.
 

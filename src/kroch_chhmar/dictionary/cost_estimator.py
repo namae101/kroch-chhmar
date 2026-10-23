@@ -8,14 +8,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
 
-from sudachi_khmer.dictionary.pos_mapper import (
+from kroch_chhmar.dictionary.pos_mapper import (
     KHMER_DEP_POS_ID,
     TOTAL_MATRIX_STATES,
     UD_POS_TAGS,
     map_to_ud_pos,
     pos_to_id,
 )
-from sudachi_khmer.normalizer import count_kccs, normalize_khmer
+from kroch_chhmar.normalizer import count_kccs, normalize_khmer
 
 
 @dataclass

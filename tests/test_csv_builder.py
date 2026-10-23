@@ -2,10 +2,10 @@
 
 from pathlib import Path
 
-from sudachi_khmer.dictionary.compound_splitter import CompoundSplitter
-from sudachi_khmer.dictionary.cost_estimator import CostEstimator
-from sudachi_khmer.dictionary.csv_writer import generate_sudachi_entries, write_sudachi_csv
-from sudachi_khmer.dictionary.pos_mapper import TOTAL_MATRIX_STATES
+from kroch_chhmar.dictionary.compound_splitter import CompoundSplitter
+from kroch_chhmar.dictionary.cost_estimator import CostEstimator
+from kroch_chhmar.dictionary.csv_writer import generate_sudachi_entries, write_sudachi_csv
+from kroch_chhmar.dictionary.pos_mapper import TOTAL_MATRIX_STATES
 
 
 def test_cost_estimator_and_matrix_def(tmp_path: Path) -> None:

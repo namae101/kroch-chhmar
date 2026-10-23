@@ -8,15 +8,15 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from sudachi_khmer.dictionary.compound_splitter import CompoundSplitter
-from sudachi_khmer.dictionary.cost_estimator import CostEstimator
-from sudachi_khmer.dictionary.pos_mapper import (
+from kroch_chhmar.dictionary.compound_splitter import CompoundSplitter
+from kroch_chhmar.dictionary.cost_estimator import CostEstimator
+from kroch_chhmar.dictionary.pos_mapper import (
     UD_POS_TAGS,
     map_to_ud_pos,
     pos_to_id,
     pos_to_sudachi_tuple,
 )
-from sudachi_khmer.normalizer import normalize_khmer
+from kroch_chhmar.normalizer import normalize_khmer
 
 
 @dataclass
@@ -303,7 +303,7 @@ def build_system_dic(
     csv_paths: list[str | Path] | str | Path,
     matrix_path: str | Path,
     output_dic_path: str | Path,
-    description: str = "Sudachi-Khmer System Dictionary",
+    description: str = "Kroch-Chhmar System Dictionary",
 ) -> Path:
     """Compile a Sudachi binary system dictionary (`system_khmer.dic`) using `sudachipy build`."""
     if isinstance(csv_paths, (str, Path)):
@@ -341,7 +341,7 @@ def build_user_dic(
     csv_paths: list[str | Path] | str | Path,
     system_dic_path: str | Path,
     output_udic_path: str | Path,
-    description: str = "Sudachi-Khmer User Dictionary",
+    description: str = "Kroch-Chhmar User Dictionary",
 ) -> Path:
     """Compile a Sudachi binary user dictionary (`user_khmer.dic`) using `sudachipy ubuild`."""
     if isinstance(csv_paths, (str, Path)):

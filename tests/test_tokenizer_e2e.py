@@ -1,20 +1,20 @@
-"""End-to-end tests for Sudachi-Khmer dictionary building, multi-granular tokenization, user dicts, and KCC repair."""
+"""End-to-end tests for Kroch-Chhmar dictionary building, multi-granular tokenization, user dicts, and KCC repair."""
 
 from pathlib import Path
 
 import pytest
 
-from sudachi_khmer.dictionary.compound_splitter import CompoundSplitter
-from sudachi_khmer.dictionary.cost_estimator import CostEstimator
-from sudachi_khmer.dictionary.csv_writer import (
+from kroch_chhmar.dictionary.compound_splitter import CompoundSplitter
+from kroch_chhmar.dictionary.cost_estimator import CostEstimator
+from kroch_chhmar.dictionary.csv_writer import (
     build_system_dic,
     build_user_dic,
     generate_sudachi_entries,
     write_sudachi_csv,
 )
-from sudachi_khmer.evaluate import evaluate_segmentation, load_gold_sentences
-from sudachi_khmer.ingest.local_importers import load_seed_dataset
-from sudachi_khmer.tokenizer import KhmerMorpheme, KhmerTokenizer, SplitMode, enforce_kcc_boundaries
+from kroch_chhmar.evaluate import evaluate_segmentation, load_gold_sentences
+from kroch_chhmar.ingest.local_importers import load_seed_dataset
+from kroch_chhmar.tokenizer import KhmerMorpheme, KhmerTokenizer, SplitMode, enforce_kcc_boundaries
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -104,7 +104,7 @@ def test_oov_and_kcc_boundary_preservation() -> None:
 
 def test_user_dictionary_ubuild_and_tokenization(tmp_path: Path) -> None:
     estimator = CostEstimator()
-    estimator.add_lexicon_entry("សូដាជីខ្មែរ", "PROPN", freq=500)
+    estimator.add_lexicon_entry("ក្រូចឆ្មារ", "PROPN", freq=500)
     splitter = CompoundSplitter()
     entries = generate_sudachi_entries(estimator, splitter, is_user_dict=True)
 
@@ -113,9 +113,9 @@ def test_user_dictionary_ubuild_and_tokenization(tmp_path: Path) -> None:
     user_dic = build_user_dic(user_csv, sys_dic, tmp_path / "user_khmer.dic")
 
     tokenizer = KhmerTokenizer(user_dic_paths=[user_dic])
-    tokens = tokenizer.tokenize("ខ្ញុំប្រើប្រាស់សូដាជីខ្មែរ។", mode=SplitMode.C)
+    tokens = tokenizer.tokenize("ខ្ញុំប្រើប្រាស់ក្រូចឆ្មារ។", mode=SplitMode.C)
     surfaces = [t.surface for t in tokens]
-    assert "សូដាជីខ្មែរ" in surfaces
+    assert "ក្រូចឆ្មារ" in surfaces
 
 
 def test_evaluation_benchmark_zero_kcc_violations() -> None:

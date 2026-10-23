@@ -11,7 +11,7 @@ from typing import Iterable
 
 from sudachipy import Dictionary, SplitMode as SudachiSplitMode
 
-from sudachi_khmer.normalizer import is_kcc_dependent_start, normalize_khmer
+from kroch_chhmar.normalizer import is_kcc_dependent_start, normalize_khmer
 
 
 class SplitMode(str, enum.Enum):
@@ -131,7 +131,7 @@ class KhmerTokenizer:
         if not sys_dic.exists():
             raise FileNotFoundError(
                 f"Compiled system dictionary not found at {sys_dic}. "
-                "Run `sudachi-khmer build` first."
+                "Run `kroch-chhmar build` first."
             )
 
         cfg_data["systemDict"] = str(sys_dic)

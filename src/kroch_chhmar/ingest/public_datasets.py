@@ -132,7 +132,7 @@ PUBLIC_SOURCES: dict[str, PublicDatasetSpec] = {
 
 def _download_bytes(url: str, timeout: int = 30) -> bytes:
     """Download raw bytes from `url` with fallback for legacy SSL certificates (e.g. NICT)."""
-    req = urllib.request.Request(url, headers={"User-Agent": "sudachi-khmer/0.1.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": "kroch-chhmar/0.1.0"})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return resp.read()

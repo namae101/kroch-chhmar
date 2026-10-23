@@ -1,8 +1,8 @@
-# Sudachi-Khmer: Dictionary Generation Workflow & Segmentation Plugin Plan
+# Kroch-Chhmar: Dictionary Generation Workflow & Segmentation Plugin Plan
 
 ## 1. Architecture Overview
 
-`sudachi-khmer` provides an end-to-end Python pipeline (`uv` + `pyproject.toml`) to build a **Sudachi-compatible Khmer binary dictionary** (`system_khmer.dic` & `user_khmer.dic`) and a **Khmer-aware SudachiPy tokenizer wrapper/plugin** that handles Khmer Unicode canonicalization and Khmer Character Cluster (KCC) constraints.
+`kroch-chhmar` provides an end-to-end Python pipeline (`uv` + `pyproject.toml`) to build a **Sudachi-compatible Khmer binary dictionary** (`system_khmer.dic` & `user_khmer.dic`) and a **Khmer-aware SudachiPy tokenizer wrapper/plugin** that handles Khmer Unicode canonicalization and Khmer Character Cluster (KCC) constraints.
 
 ```mermaid
 flowchart LR
@@ -93,7 +93,7 @@ flowchart LR
 ## 3. Project Directory Structure
 
 ```text
-sudachi-khmer/
+kroch-chhmar/
 ├── pyproject.toml                 # Dependencies (sudachipy, betterkhmer, typer, rich, pyyaml)
 ├── README.md
 ├── plan/
@@ -110,7 +110,7 @@ sudachi-khmer/
 │   ├── interim/                   # Normalized wordlists, extracted unigrams/bigrams
 │   └── build/                     # Generated matrix.def, lex.csv, system_khmer.dic
 ├── src/
-│   └── sudachi_khmer/
+│   └── kroch_chhmar/
 │       ├── __init__.py
 │       ├── cli.py                 # CLI entrypoints: fetch, prepare, build, ubuild, tokenize, evaluate
 │       ├── normalizer.py          # BetterKhmer integration, ZWSP handling, KCC regex/parser
@@ -152,5 +152,5 @@ sudachi-khmer/
 5. **Runtime Tokenizer & KCC Post-Processor (`tokenizer.py`)**:
    - Implement `KhmerTokenizer` supporting Modes `A`, `B`, `C`, pre-normalization, and post-tokenization KCC repair.
 6. **CLI & Evaluation Suite (`cli.py`, `evaluate.py`, `tests/`)**:
-   - Build CLI commands (`sudachi-khmer fetch|prepare|build|ubuild|tokenize|evaluate`).
+   - Build CLI commands (`kroch-chhmar fetch|prepare|build|ubuild|tokenize|evaluate`).
    - Write end-to-end tests compiling a seed `system_khmer.dic` and verifying segmentation across Modes A, B, and C, OOV handling, and KCC boundary preservation.

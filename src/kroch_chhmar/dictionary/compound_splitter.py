@@ -8,7 +8,7 @@ from typing import Any
 
 import yaml
 
-from sudachi_khmer.normalizer import count_kccs, get_kcc_boundaries, normalize_khmer
+from kroch_chhmar.normalizer import count_kccs, get_kcc_boundaries, normalize_khmer
 
 
 @dataclass

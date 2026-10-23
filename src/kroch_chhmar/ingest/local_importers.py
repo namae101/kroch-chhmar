@@ -6,10 +6,10 @@ import csv
 import re
 from pathlib import Path
 
-from sudachi_khmer.dictionary.compound_splitter import CompoundSplitter, SplitResolution
-from sudachi_khmer.dictionary.cost_estimator import CostEstimator
-from sudachi_khmer.dictionary.pos_mapper import map_to_ud_pos
-from sudachi_khmer.normalizer import normalize_khmer
+from kroch_chhmar.dictionary.compound_splitter import CompoundSplitter, SplitResolution
+from kroch_chhmar.dictionary.cost_estimator import CostEstimator
+from kroch_chhmar.dictionary.pos_mapper import map_to_ud_pos
+from kroch_chhmar.normalizer import normalize_khmer
 
 
 def ingest_lexicon_tsv(

@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "sudachi-khmer"
+name = "kroch-chhmar"
 version = "0.1.0"
 description = "Workflow for generating Sudachi-compatible Khmer dictionaries and KCC-aware word segmentation plugin"
 readme = "README.md"
@@ -25,10 +25,10 @@ dev = [
 ]
 
 [project.scripts]
-sudachi-khmer = "sudachi_khmer.cli:app"
+kroch-chhmar = "kroch_chhmar.cli:app"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/sudachi_khmer"]
+packages = ["src/kroch_chhmar"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

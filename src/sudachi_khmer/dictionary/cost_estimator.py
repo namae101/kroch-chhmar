@@ -26,7 +26,12 @@ class LexiconStats:
     pos_counts: Counter[str] = field(default_factory=Counter)
     pos_bigram_counts: Counter[tuple[int, int]] = field(default_factory=Counter)
     lexicon_words: dict[str, set[str]] = field(default_factory=lambda: defaultdict(set))
+    untyped_words: Counter[str] = field(default_factory=Counter)
     reading_forms: dict[str, str] = field(default_factory=dict)
+    raw_lexicon_rows: int = 0
+    raw_sentences: int = 0
+    seen_sentence_hashes: set[str] = field(default_factory=set)
+    dedup_sentences: int = 0
     total_corpus_tokens: int = 0
 
 
@@ -54,14 +59,26 @@ class CostEstimator:
         freq: int = 0,
         reading: str | None = None,
     ) -> None:
-        """Register a word from a dictionary/lexicon with optional frequency and reading."""
+        """
+        Normalize `surface` and register/merge it in the lexicon.
+        If `pos` is None (untyped wordlist), it is merged into existing POS tags for `surface`
+        during `finalize_deduplication()` instead of creating a duplicate `NOUN` entry.
+        """
         norm = normalize_khmer(surface.strip())
         if not norm:
             return
+        self.stats.raw_lexicon_rows += 1
+        if reading:
+            norm_reading = normalize_khmer(reading.strip())
+            if norm_reading and norm not in self.stats.reading_forms:
+                self.stats.reading_forms[norm] = norm_reading
+
+        if pos is None:
+            self.stats.untyped_words[norm] += max(freq, 0)
+            return
+
         ud_pos = map_to_ud_pos(pos, norm)
         self.stats.lexicon_words[norm].add(ud_pos)
-        if reading:
-            self.stats.reading_forms[norm] = reading.strip()
         if freq > 0:
             self.stats.word_pos_counts[(norm, ud_pos)] += freq
             self.stats.pos_counts[ud_pos] += freq
@@ -70,12 +87,14 @@ class CostEstimator:
     def add_segmented_sentence(
         self,
         tokens: Iterable[str | tuple[str, str | None]],
-    ) -> None:
+        deduplicate_sentence: bool = True,
+    ) -> bool:
         """
-        Ingest a segmented sentence (either raw surface strings or `(surface, pos)` pairs)
+        Normalize and ingest a segmented sentence (either raw surface strings or `(surface, pos)` pairs)
         to update unigram and POS bigram counts.
+        Returns True if the sentence was added, or False if skipped as an exact normalized duplicate.
         """
-        prev_pos_id: int | None = None
+        normalized_items: list[tuple[str, str | None]] = []
         for item in tokens:
             if isinstance(item, tuple):
                 raw_surf, raw_pos = item
@@ -83,12 +102,28 @@ class CostEstimator:
                 raw_surf, raw_pos = item, None
 
             norm = normalize_khmer(raw_surf.strip())
-            if not norm:
-                continue
+            if norm:
+                normalized_items.append((norm, raw_pos))
 
-            # If POS is not provided in the sentence, check if the lexicon already knows it
-            if raw_pos is None and norm in self.stats.lexicon_words:
-                known_tags = sorted(self.stats.lexicon_words[norm])
+        if not normalized_items:
+            return False
+
+        self.stats.raw_sentences += 1
+        if deduplicate_sentence:
+            sig = " ".join(f"{s}/{p or ''}" for s, p in normalized_items)
+            if sig in self.stats.seen_sentence_hashes:
+                return False
+            self.stats.seen_sentence_hashes.add(sig)
+
+        self.stats.dedup_sentences += 1
+        prev_pos_id: int | None = None
+        for norm, raw_pos in normalized_items:
+            if raw_pos is None and norm in self.stats.lexicon_words and self.stats.lexicon_words[norm]:
+                # Pick the highest-frequency known POS for this normalized word
+                known_tags = sorted(
+                    self.stats.lexicon_words[norm],
+                    key=lambda t: (-self.stats.word_pos_counts.get((norm, t), 0), t),
+                )
                 ud_pos = known_tags[0]
             else:
                 ud_pos = map_to_ud_pos(raw_pos, norm)
@@ -102,6 +137,79 @@ class CostEstimator:
             if prev_pos_id is not None:
                 self.stats.pos_bigram_counts[(prev_pos_id, curr_pos_id)] += 1
             prev_pos_id = curr_pos_id
+
+        return True
+
+    def finalize_deduplication(self) -> tuple[int, int]:
+        """
+        Merge untyped wordlist frequencies into existing normalized `(surface, pos)` entries,
+        and prune noisy low-frequency POS tags when a word has a clear dominant POS.
+        Returns `(unique_normalized_surfaces, unique_surface_pos_pairs)`.
+        """
+        # 1. Merge untyped words (from frequency lists like khmerlbdict) into existing POS tags
+        for norm, freq in list(self.stats.untyped_words.items()):
+            existing_tags = self.stats.lexicon_words.get(norm)
+            if existing_tags:
+                # Attach frequency to the primary/most frequent known POS tag for this word
+                best_tag = max(
+                    existing_tags,
+                    key=lambda t: (self.stats.word_pos_counts.get((norm, t), 0), t == "NOUN"),
+                )
+                if freq > 0:
+                    self.stats.word_pos_counts[(norm, best_tag)] += freq
+                    self.stats.pos_counts[best_tag] += freq
+                    self.stats.total_corpus_tokens += freq
+            else:
+                ud_pos = map_to_ud_pos(None, norm)
+                self.stats.lexicon_words[norm].add(ud_pos)
+                if freq > 0:
+                    self.stats.word_pos_counts[(norm, ud_pos)] += freq
+                    self.stats.pos_counts[ud_pos] += freq
+                    self.stats.total_corpus_tokens += freq
+        self.stats.untyped_words.clear()
+
+        # 2. Prune noisy minority POS tags from corpus tagging errors (keep tags with >= 10% share or explicit dictionary entries)
+        for norm, tags in list(self.stats.lexicon_words.items()):
+            if len(tags) <= 1:
+                continue
+            max_cnt = max(self.stats.word_pos_counts.get((norm, t), 0) for t in tags)
+            if max_cnt >= 10:
+                kept = {
+                    t
+                    for t in tags
+                    if self.stats.word_pos_counts.get((norm, t), 0) == 0  # explicit dictionary POS
+                    or self.stats.word_pos_counts.get((norm, t), 0) >= max(2, int(max_cnt * 0.10))
+                }
+                if kept:
+                    self.stats.lexicon_words[norm] = kept
+
+        unique_surfaces = len(self.stats.lexicon_words)
+        unique_pairs = sum(len(tags) for tags in self.stats.lexicon_words.values())
+        return unique_surfaces, unique_pairs
+
+    def export_interim_datasets(self, interim_dir: str | Path) -> tuple[Path, Path]:
+        """
+        Write normalized and deduplicated lexicon (`normalized_lexicon.tsv`) and
+        corpus sentences (`normalized_corpus.txt`) to `data/interim/`.
+        """
+        self.finalize_deduplication()
+        out_dir = Path(interim_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        lex_path = out_dir / "normalized_lexicon.tsv"
+        lines: list[str] = ["# surface\tpos\tfreq\treading"]
+        for surf in sorted(self.stats.lexicon_words.keys()):
+            reading = self.stats.reading_forms.get(surf, "*")
+            for tag in sorted(self.stats.lexicon_words[surf]):
+                freq = self.stats.word_pos_counts.get((surf, tag), 0)
+                lines.append(f"{surf}\t{tag}\t{freq}\t{reading}")
+        lex_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+        corp_path = out_dir / "normalized_corpus.txt"
+        corp_lines = sorted(self.stats.seen_sentence_hashes)
+        corp_path.write_text("\n".join(corp_lines) + "\n", encoding="utf-8")
+
+        return lex_path, corp_path
 
     def estimate_word_cost(self, surface: str, ud_pos: str) -> int:
         """

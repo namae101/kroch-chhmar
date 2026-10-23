@@ -1,11 +1,14 @@
-"""Importers for local lexicons (CSV/TSV/wordlist), segmented text, CoNLL-U, and seed data."""
+"""Importers for local lexicons (CSV/TSV/wordlist), segmented text, khPOS, ALT NOVA, CoNLL-U, and seed data."""
 
 from __future__ import annotations
 
 import csv
+import re
 from pathlib import Path
 
+from sudachi_khmer.dictionary.compound_splitter import CompoundSplitter, SplitResolution
 from sudachi_khmer.dictionary.cost_estimator import CostEstimator
+from sudachi_khmer.dictionary.pos_mapper import map_to_ud_pos
 from sudachi_khmer.normalizer import normalize_khmer
 
 
@@ -13,12 +16,13 @@ def ingest_lexicon_tsv(
     path: str | Path,
     estimator: CostEstimator,
     delimiter: str | None = None,
+    default_pos: str | None = None,
 ) -> int:
     """
     Ingest a lexicon file (TSV, CSV, or plain 1-word-per-line wordlist).
     Supported columns:
       - 1 column: `surface`
-      - 2 columns: `surface`, `pos` (or `surface`, `freq` if 2nd column is numeric)
+      - 2 columns: `surface`, `pos` (or `surface`, `freq` if 2nd column is numeric, as in `khmerlbdict`)
       - 3+ columns: `surface`, `pos`, `freq`, `[reading]`
     Returns the number of entries ingested.
     """
@@ -28,6 +32,12 @@ def ingest_lexicon_tsv(
 
     if delimiter is None:
         delimiter = "\t" if p.suffix.lower() in (".tsv", ".txt") else ","
+
+    # Infer default POS for proper noun lists (names, places, villages) from khmerlbdict
+    if default_pos is None:
+        stem = p.stem.lower()
+        if any(k in stem for k in ("names", "places", "villages")):
+            default_pos = "PROPN"
 
     count = 0
     with p.open("r", encoding="utf-8") as f:
@@ -45,7 +55,7 @@ def ingest_lexicon_tsv(
             if not surface:
                 continue
 
-            pos: str | None = None
+            pos: str | None = default_pos
             freq: int = 0
             reading: str | None = None
 
@@ -55,7 +65,7 @@ def ingest_lexicon_tsv(
                 else:
                     pos = parts[1]
             elif len(parts) >= 3:
-                pos = parts[1] if parts[1] and parts[1] != "*" else None
+                pos = parts[1] if parts[1] and parts[1] != "*" else default_pos
                 if parts[2].isdigit():
                     freq = int(parts[2])
                 if len(parts) >= 4 and parts[3] and parts[3] != "*":
@@ -67,13 +77,84 @@ def ingest_lexicon_tsv(
     return count
 
 
+def ingest_rac_dictionary_csv(
+    path: str | Path,
+    estimator: CostEstimator,
+    splitter: CompoundSplitter | None = None,
+) -> int:
+    """
+    Ingest the Royal Academy of Cambodia (RAC) 2022 Khmer Dictionary CSV
+    (`RAC-Khmer-Dict-2022.csv` from `seanghay/khmer-dictionary-44k`).
+    Extracts headwords (`t_main`), subwords/compounds (`t_subword`), POS tags (`t_pos`),
+    and pronunciation readings (`t_pron`), and links `t_subword` compounds to their `t_main`
+    base words for Mode B/C multi-granular splitting.
+    """
+    p = Path(path)
+    if not p.exists():
+        return 0
+
+    count = 0
+    last_main = ""
+    with p.open("r", encoding="utf-8", errors="replace", newline="") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            raw_main = (row.get("t_main") or "").strip()
+            raw_sub = (row.get("t_subword") or "").strip()
+            raw_pos = (row.get("t_pos") or "").strip()
+            raw_pron = (row.get("t_pron") or "").strip().strip("[]").strip()
+
+            if raw_main:
+                last_main = normalize_khmer(raw_main)
+
+            target_raw = raw_sub if raw_sub else raw_main
+            surface = normalize_khmer(target_raw)
+            if not surface:
+                continue
+
+            ud_pos = map_to_ud_pos(raw_pos, surface) if raw_pos else None
+            reading = normalize_khmer(raw_pron) if raw_pron else None
+
+            estimator.add_lexicon_entry(
+                surface=surface,
+                pos=ud_pos,
+                freq=0,
+                reading=reading,
+            )
+            count += 1
+
+            # If this is a subword derived from `last_main` (e.g. t_main='កក', t_subword='កកស្ទះ'),
+            # record last_main in base_vocab so CompoundSplitter can split `last_main + remainder`
+            if raw_sub and last_main and splitter is not None:
+                splitter.base_vocab.add(last_main)
+                if (
+                    surface.startswith(last_main)
+                    and len(surface) > len(last_main)
+                    and surface not in splitter.overrides
+                ):
+                    rem = surface[len(last_main) :]
+                    if rem in splitter.base_vocab:
+                        splitter.overrides[surface] = SplitResolution(
+                            surface=surface,
+                            split_type="B",
+                            split_a=[last_main, rem],
+                            override_pos=ud_pos,
+                        )
+            elif not raw_sub and last_main and splitter is not None:
+                splitter.base_vocab.add(last_main)
+
+    return count
+
+
 def ingest_segmented_text_file(
     path: str | Path,
     estimator: CostEstimator,
+    splitter: CompoundSplitter | None = None,
 ) -> int:
     """
     Ingest a pre-segmented Khmer corpus where words are separated by spaces,
     Zero-Width Spaces (`\\u200b`), or `|` delimiters, with optional `word/POS` tags.
+    Also supports `ye-kyaw-thu/khPOS` compound markers (`_` and `~`), automatically
+    extracting multi-granular Mode B/C compound splits when `splitter` is provided!
     Returns the number of sentences processed.
     """
     p = Path(path)
@@ -96,12 +177,133 @@ def ingest_segmented_text_file(
             parsed_tokens: list[tuple[str, str | None]] = []
             for tok in raw_tokens:
                 if "/" in tok and len(tok) > 1 and not tok.startswith("/"):
-                    surf, pos = tok.rsplit("/", 1)
-                    parsed_tokens.append((surf, pos))
+                    raw_surf, raw_pos = tok.rsplit("/", 1)
                 else:
-                    parsed_tokens.append((tok, None))
+                    raw_surf, raw_pos = tok, None
+
+                # Handle khPOS compound sub-token separators ('_' and '~')
+                if ("_" in raw_surf or "~" in raw_surf) and len(raw_surf) > 1:
+                    sub_parts = [
+                        normalize_khmer(sp)
+                        for sp in re.split(r"[_~]+", raw_surf)
+                        if normalize_khmer(sp)
+                    ]
+                    if len(sub_parts) >= 2 and all(
+                        any(0x1780 <= ord(c) <= 0x17FF for c in sp) for sp in sub_parts
+                    ):
+                        full_surf = normalize_khmer("".join(sub_parts))
+                        ud_pos = map_to_ud_pos(raw_pos, full_surf)
+                        parsed_tokens.append((full_surf, ud_pos))
+
+                        # Register sub-parts in base vocabulary & estimator
+                        for sp in sub_parts:
+                            estimator.add_lexicon_entry(sp, pos=None, freq=1)
+                            if splitter is not None:
+                                splitter.base_vocab.add(sp)
+
+                        if splitter is not None and full_surf not in splitter.overrides:
+                            mode = "B" if len(sub_parts) == 2 else "C"
+                            splitter.overrides[full_surf] = SplitResolution(
+                                surface=full_surf,
+                                split_type=mode,
+                                split_a=sub_parts,
+                                split_b=sub_parts if mode == "C" else [],
+                                override_pos=ud_pos,
+                            )
+                        continue
+
+                parsed_tokens.append((raw_surf, raw_pos))
 
             estimator.add_segmented_sentence(parsed_tokens)
+            sentences += 1
+
+    return sentences
+
+
+def ingest_alt_nova_files(
+    tok_path: str | Path,
+    tag_path: str | Path,
+    estimator: CostEstimator,
+    splitter: CompoundSplitter | None = None,
+) -> int:
+    """
+    Ingest the NICT/NIPTICT Khmer ALT NOVA parallel `.km-tok.nova` and `.km-tag.nova` files.
+    Parses both leaf words (`Mode A`) and bracketed compounds (`n[n v]n` -> `Mode B/C`)
+    along with their POS tags.
+    Returns the number of sentences processed.
+    """
+    tok_p = Path(tok_path)
+    tag_p = Path(tag_path)
+    if not tok_p.exists() or not tag_p.exists():
+        return 0
+
+    tok_lines = tok_p.read_text(encoding="utf-8", errors="replace").splitlines()
+    tag_lines = tag_p.read_text(encoding="utf-8", errors="replace").splitlines()
+
+    sentences = 0
+    for tok_line, tag_line in zip(tok_lines, tag_lines):
+        if "\t" not in tok_line or "\t" not in tag_line:
+            continue
+        _, tok_str = tok_line.split("\t", 1)
+        _, tag_str = tag_line.split("\t", 1)
+
+        words = tok_str.split()
+        # Match either bracketed compound `outer[inner1 inner2]outer` or single tag
+        chunks = re.findall(r"\S+\[[^\]]+\]\S+|\S+", tag_str)
+
+        sentence_pairs: list[tuple[str, str | None]] = []
+        word_idx = 0
+
+        for chunk in chunks:
+            if "[" in chunk:
+                outer_tag = chunk.split("[", 1)[0]
+                inner_match = re.search(r"\[([^\]]+)\]", chunk)
+                inner_tags = inner_match.group(1).split() if inner_match else []
+                k = len(inner_tags)
+                if word_idx + k > len(words) or k == 0:
+                    break
+
+                sub_words = [normalize_khmer(w) for w in words[word_idx : word_idx + k]]
+                word_idx += k
+
+                # Register individual leaf words with their inner POS tags
+                for sw, itag in zip(sub_words, inner_tags):
+                    if sw:
+                        estimator.add_lexicon_entry(sw, pos=map_to_ud_pos(itag, sw), freq=1)
+                        if splitter is not None:
+                            splitter.base_vocab.add(sw)
+
+                # Form the compound surface if all sub-words are Khmer script (skip spaced ASCII numbers)
+                clean_subs = [sw for sw in sub_words if sw]
+                if len(clean_subs) >= 2 and all(
+                    any(0x1780 <= ord(c) <= 0x17FF for c in sw) for sw in clean_subs
+                ):
+                    compound_surf = normalize_khmer("".join(clean_subs))
+                    ud_outer = map_to_ud_pos(outer_tag, compound_surf)
+                    sentence_pairs.append((compound_surf, ud_outer))
+                    if splitter is not None and compound_surf not in splitter.overrides:
+                        mode = "B" if len(clean_subs) == 2 else "C"
+                        splitter.overrides[compound_surf] = SplitResolution(
+                            surface=compound_surf,
+                            split_type=mode,
+                            split_a=clean_subs,
+                            split_b=clean_subs if mode == "C" else [],
+                            override_pos=ud_outer,
+                        )
+                else:
+                    for sw, itag in zip(sub_words, inner_tags):
+                        if sw:
+                            sentence_pairs.append((sw, map_to_ud_pos(itag, sw)))
+            else:
+                if word_idx >= len(words):
+                    break
+                w = normalize_khmer(words[word_idx])
+                word_idx += 1
+                if w:
+                    sentence_pairs.append((w, map_to_ud_pos(chunk, w)))
+
+        if sentence_pairs:
+            estimator.add_segmented_sentence(sentence_pairs)
             sentences += 1
 
     return sentences
@@ -139,7 +341,6 @@ def ingest_conllu_file(
             if len(cols) < 4:
                 continue
             token_id = cols[0]
-            # Skip multi-word token range lines (e.g. 1-2) or empty nodes (e.g. 1.1)
             if "-" in token_id or "." in token_id:
                 continue
 
@@ -158,13 +359,13 @@ def ingest_conllu_file(
 def load_seed_dataset(
     estimator: CostEstimator,
     seed_dir: str | Path | None = None,
+    splitter: CompoundSplitter | None = None,
 ) -> tuple[int, int]:
     """
     Load the built-in Khmer seed lexicon and segmented corpus from `data/seed/`.
     Returns `(num_lexicon_entries, num_corpus_sentences)`.
     """
     if seed_dir is None:
-        # Resolve relative to repository root or package
         repo_seed = Path(__file__).resolve().parents[3] / "data" / "seed"
         seed_dir = repo_seed
 
@@ -175,7 +376,7 @@ def load_seed_dataset(
     for tsv_file in sorted(sdir.glob("*.tsv")):
         lex_count += ingest_lexicon_tsv(tsv_file, estimator)
     for txt_file in sorted(sdir.glob("*.txt")):
-        sent_count += ingest_segmented_text_file(txt_file, estimator)
+        sent_count += ingest_segmented_text_file(txt_file, estimator, splitter=splitter)
     for conllu_file in sorted(sdir.glob("*.conllu")):
         sent_count += ingest_conllu_file(conllu_file, estimator)
 

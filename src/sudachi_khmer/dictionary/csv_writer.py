@@ -81,12 +81,19 @@ def generate_sudachi_entries(
       - Pass 3: Collect Mode C words referencing Mode A IDs in `split_info_a` and Mode A/B IDs in `split_info_b`.
     """
     id_prefix = "U" if is_user_dict else ""
+    estimator.finalize_deduplication()
 
     # Gather all candidate (surface, ud_pos) pairs
     raw_candidates: dict[tuple[str, str], None] = {}
     for surf, tags in sorted(estimator.stats.lexicon_words.items()):
         norm = normalize_khmer(surf)
         if not norm:
+            continue
+        # Only include words containing Khmer characters or standard single punctuation marks;
+        # ASCII numbers (e.g. "1,000") and Latin words are handled by Sudachi's NUMERIC/ALPHA OOV plugins
+        has_khmer = any(0x1780 <= ord(c) <= 0x17FF or 0x19E0 <= ord(c) <= 0x19FF for c in norm)
+        is_basic_punct = norm in ("!", "?", ".", ";", ":", "(", ")", "[", "]", "«", "»", "-", "/")
+        if not (has_khmer or is_basic_punct):
             continue
         for tag in sorted(tags):
             raw_candidates[(norm, map_to_ud_pos(tag, norm))] = None
@@ -189,33 +196,10 @@ def generate_sudachi_entries(
         )
 
     # Pass 1: Mode A entries
-    if not is_user_dict:
-        # Also include Sudachi's built-in default SimpleOovPlugin POS (名詞,普通名詞,一般,*,*,*)
-        # in the system dictionary POS table so `sudachipy ubuild` works out of the box
-        entries.append(
-            SudachiCSVEntry(
-                surface="__sudachi_default_oov__",
-                left_id=16,
-                right_id=16,
-                cost=32000,
-                display_surface="__sudachi_default_oov__",
-                pos1="名詞",
-                pos2="普通名詞",
-                pos3="一般",
-                pos4="*",
-                pos5="*",
-                pos6="*",
-                reading_form="__sudachi_default_oov__",
-                normalized_form="__sudachi_default_oov__",
-                dict_form_id="*",
-                split_type="A",
-            )
-        )
-
     for surf, ud_pos in mode_a_items:
         word_idx = len(entries)
         entries.append(_make_base_entry(surf, ud_pos, split_type="A"))
-        if surf not in surface_to_word_id:
+        if surf not in surface_to_word_id and not surf.isdigit():
             surface_to_word_id[surf] = f"{id_prefix}{word_idx}"
 
     # Pass 2: Mode B entries
@@ -234,13 +218,13 @@ def generate_sudachi_entries(
                     split_info_b="*",
                 )
             )
-            if surf not in surface_to_word_id:
+            if surf not in surface_to_word_id and not surf.isdigit():
                 surface_to_word_id[surf] = f"{id_prefix}{word_idx}"
         else:
             # Fallback to Mode A if any constituent ID could not be resolved
             word_idx = len(entries)
             entries.append(_make_base_entry(surf, ud_pos, split_type="A"))
-            if surf not in surface_to_word_id:
+            if surf not in surface_to_word_id and not surf.isdigit():
                 surface_to_word_id[surf] = f"{id_prefix}{word_idx}"
 
     # Pass 3: Mode C entries
@@ -267,13 +251,36 @@ def generate_sudachi_entries(
                     split_info_b=info_b,
                 )
             )
-            if surf not in surface_to_word_id:
+            if surf not in surface_to_word_id and not surf.isdigit():
                 surface_to_word_id[surf] = f"{id_prefix}{word_idx}"
         else:
             word_idx = len(entries)
             entries.append(_make_base_entry(surf, ud_pos, split_type="A"))
-            if surf not in surface_to_word_id:
+            if surf not in surface_to_word_id and not surf.isdigit():
                 surface_to_word_id[surf] = f"{id_prefix}{word_idx}"
+
+    if not is_user_dict:
+        # Also include Sudachi's built-in default SimpleOovPlugin POS (名詞,普通名詞,一般,*,*,*)
+        # at the end of the system dictionary POS table so `sudachipy ubuild` works out of the box
+        entries.append(
+            SudachiCSVEntry(
+                surface="__sudachi_default_oov__",
+                left_id=16,
+                right_id=16,
+                cost=32000,
+                display_surface="__sudachi_default_oov__",
+                pos1="名詞",
+                pos2="普通名詞",
+                pos3="一般",
+                pos4="*",
+                pos5="*",
+                pos6="*",
+                reading_form="__sudachi_default_oov__",
+                normalized_form="__sudachi_default_oov__",
+                dict_form_id="*",
+                split_type="A",
+            )
+        )
 
     return entries
 

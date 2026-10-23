@@ -145,6 +145,10 @@ class CompoundSplitter:
         if norm in self.overrides:
             return self.overrides[norm]
 
+        # Only decompose words composed of Khmer script characters (0x1780..0x17FF)
+        if not all(0x1780 <= ord(c) <= 0x17FF for c in norm):
+            return SplitResolution(surface=norm, split_type="A")
+
         num_kccs = count_kccs(norm)
         if num_kccs <= 2:
             # Short words (1-2 KCCs) default to indivisible Mode A base words

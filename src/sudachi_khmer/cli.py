@@ -19,8 +19,10 @@ from sudachi_khmer.dictionary.csv_writer import (
 )
 from sudachi_khmer.evaluate import evaluate_segmentation, load_gold_sentences
 from sudachi_khmer.ingest.local_importers import (
+    ingest_alt_nova_files,
     ingest_conllu_file,
     ingest_lexicon_tsv,
+    ingest_rac_dictionary_csv,
     ingest_segmented_text_file,
     load_seed_dataset,
 )
@@ -40,8 +42,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 @app.command("fetch")
 def cmd_fetch(
     source: str = typer.Argument(
-        "khmer-words",
-        help=f"Dataset key ({', '.join(PUBLIC_SOURCES.keys())}) or direct URL.",
+        "all",
+        help=f"Dataset key ({', '.join(list(PUBLIC_SOURCES.keys()) + ['all'])}) or direct URL.",
     ),
     output_dir: Path = typer.Option(
         REPO_ROOT / "data" / "raw",
@@ -50,10 +52,11 @@ def cmd_fetch(
         help="Directory to store downloaded raw data.",
     ),
 ) -> None:
-    """Download public Khmer wordlists or corpora into `data/raw`."""
+    """Download public Khmer wordlists or corpora (`khpos`, `alt-km-nova`, `khmerlbdict`, `all`) into `data/raw`."""
     console.print(f"[bold cyan]Fetching dataset:[/bold cyan] {source} -> {output_dir}")
-    target = fetch_public_dataset(source, output_dir)
-    console.print(f"[bold green]Saved to:[/bold green] {target}")
+    targets = fetch_public_dataset(source, output_dir)
+    for t in targets:
+        console.print(f"  [bold green]✓ Saved:[/bold green] {t}")
 
 
 @app.command("prepare")
@@ -91,12 +94,18 @@ def cmd_prepare(
         "-b",
         help="Output directory for `lex.csv` and `matrix.def`.",
     ),
+    interim_dir: Path = typer.Option(
+        REPO_ROOT / "data" / "interim",
+        "--interim-dir",
+        help="Output directory for normalized & deduplicated interim data.",
+    ),
 ) -> None:
     """Normalize inputs, estimate NLL costs, decompose compounds (A/B/C), and write `lex.csv` + `matrix.def`."""
     estimator = CostEstimator()
+    splitter = CompoundSplitter(compounds_yaml_path=compounds_yaml)
 
     if include_seed:
-        l_cnt, s_cnt = load_seed_dataset(estimator)
+        l_cnt, s_cnt = load_seed_dataset(estimator, splitter=splitter)
         console.print(
             f"[green]Loaded seed dataset:[/green] {l_cnt} lexicon entries, {s_cnt} corpus sentences"
         )
@@ -104,15 +113,29 @@ def cmd_prepare(
     if include_raw:
         raw_dir = REPO_ROOT / "data" / "raw"
         if raw_dir.exists():
+            # Check for NICT ALT NOVA parallel files first
+            nova_tok = raw_dir / "data_km.km-tok.nova"
+            nova_tag = raw_dir / "data_km.km-tag.nova"
+            if nova_tok.exists() and nova_tag.exists():
+                c = ingest_alt_nova_files(nova_tok, nova_tag, estimator, splitter=splitter)
+                console.print(
+                    f"[green]Loaded NICT ALT NOVA corpus ({nova_tok.name} + {nova_tag.name}):[/green] {c} sentences"
+                )
+
             for f in sorted(raw_dir.glob("*")):
-                if f.suffix.lower() in (".tsv", ".csv"):
+                if f.name in ("data_km.km-tok.nova", "data_km.km-tag.nova", "README.txt"):
+                    continue
+                if f.name == "RAC-Khmer-Dict-2022.csv":
+                    c = ingest_rac_dictionary_csv(f, estimator, splitter=splitter)
+                    console.print(f"[green]Loaded RAC 2022 Dictionary {f.name}:[/green] {c} entries")
+                elif f.suffix.lower() in (".tsv", ".csv"):
                     c = ingest_lexicon_tsv(f, estimator)
                     console.print(f"[green]Loaded raw lexicon {f.name}:[/green] {c} entries")
                 elif f.suffix.lower() == ".conllu":
                     c = ingest_conllu_file(f, estimator)
                     console.print(f"[green]Loaded raw CoNLL-U {f.name}:[/green] {c} sentences")
-                elif f.suffix.lower() == ".txt":
-                    c = ingest_segmented_text_file(f, estimator)
+                elif f.suffix.lower() in (".txt", ".pos"):
+                    c = ingest_segmented_text_file(f, estimator, splitter=splitter)
                     console.print(f"[green]Loaded raw corpus {f.name}:[/green] {c} sentences")
 
     for lex_path in lexicon or []:
@@ -123,20 +146,30 @@ def cmd_prepare(
         if corp_path.suffix.lower() == ".conllu":
             c = ingest_conllu_file(corp_path, estimator)
         else:
-            c = ingest_segmented_text_file(corp_path, estimator)
+            c = ingest_segmented_text_file(corp_path, estimator, splitter=splitter)
         console.print(f"[green]Ingested corpus {corp_path}:[/green] {c} sentences")
 
-    # Initialize CompoundSplitter with known base vocabulary
-    base_vocab = set(estimator.stats.lexicon_words.keys())
-    word_costs = {
-        surf: estimator.estimate_word_cost(surf, next(iter(tags)))
-        for surf, tags in estimator.stats.lexicon_words.items()
-    }
-    splitter = CompoundSplitter(
-        base_vocab=base_vocab,
-        word_costs=word_costs,
-        compounds_yaml_path=compounds_yaml,
+    # Finalize normalization & deduplication and export clean interim files
+    uniq_surfaces, uniq_pairs = estimator.finalize_deduplication()
+    interim_lex, interim_corp = estimator.export_interim_datasets(interim_dir)
+    console.print(
+        f"[bold cyan]Normalized & Deduplicated Data:[/bold cyan]\n"
+        f"  • Unique Khmer words      : {uniq_surfaces:,} (from {estimator.stats.raw_lexicon_rows:,} raw lexicon rows)\n"
+        f"  • Unique (word, POS) pairs: {uniq_pairs:,}\n"
+        f"  • Unique corpus sentences : {estimator.stats.dedup_sentences:,} (from {estimator.stats.raw_sentences:,} raw sentences)\n"
+        f"  • Exported interim files  : {interim_lex.name}, {interim_corp.name}"
     )
+
+    # Populate CompoundSplitter with all discovered base words and word costs
+    splitter.base_vocab.update(estimator.stats.lexicon_words.keys())
+    splitter.word_costs.update(
+        {
+            surf: estimator.estimate_word_cost(surf, next(iter(tags)))
+            for surf, tags in estimator.stats.lexicon_words.items()
+        }
+    )
+    # Re-load YAML overrides last so curated rules always take priority over corpus heuristics
+    splitter.load_compounds_yaml(compounds_yaml)
 
     entries = generate_sudachi_entries(estimator, splitter, is_user_dict=False)
     csv_path = write_sudachi_csv(entries, build_dir / "lex.csv")
@@ -187,6 +220,7 @@ def cmd_build(
             include_raw=True,
             compounds_yaml=REPO_ROOT / "configs" / "compounds.yaml",
             build_dir=build_dir,
+            interim_dir=REPO_ROOT / "data" / "interim",
         )
 
     console.print(f"[bold cyan]Compiling Sudachi system dictionary:[/bold cyan] {dic_path}")

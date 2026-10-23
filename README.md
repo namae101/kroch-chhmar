@@ -22,20 +22,23 @@ Full architectural details are documented in [`plan/implementation_plan.md`](pla
 
 ## Quickstart
 
-### 1. Build the System Dictionary
+### 1. Fetch Public Khmer Datasets & Build the System Dictionary
 
 ```bash
-# Prepare 19-column lex.csv + matrix.def and compile system_khmer.dic
+# Download all 4 open datasets (khPOS, alt-km-nova, khmerlbdict, khmer-dictionary-44k)
+uv run sudachi-khmer fetch all
+
+# Normalize with BetterKhmer, deduplicate into data/interim/, generate lex.csv + matrix.def, and compile system_khmer.dic
 uv run sudachi-khmer prepare
 uv run sudachi-khmer build
 ```
 
-*(Optional)* Fetch open-source Khmer wordlists from GitHub before running `prepare`:
-```bash
-uv run sudachi-khmer fetch khmer-words
-uv run sudachi-khmer prepare
-uv run sudachi-khmer build
-```
+Supported dataset keys for `sudachi-khmer fetch`:
+- `all`: Fetches all four main datasets below
+- `khpos`: [`ye-kyaw-thu/khPOS`](https://github.com/ye-kyaw-thu/khPOS) (12k POS-tagged & compound-marked sentences)
+- `alt-km-nova`: [NICT/NIPTICT Asian Language Treebank (ALT) Khmer NOVA](https://www2.nict.go.jp/astrec-att/member/mutiyama/ALT/km-nova-181101.zip) (20k parallel tokenized + bracket-POS sentences)
+- `khmerlbdict`: [`silnrsi/khmerlbdict`](https://github.com/silnrsi/khmerlbdict) (SEALang, Bible, village/place/name frequency wordlists)
+- `khmer-dictionary-44k`: [`seanghay/khmer-dictionary-44k`](https://huggingface.co/datasets/seanghay/khmer-dictionary-44k) (Royal Academy of Cambodia 2022 44k dictionary with POS and pronunciation)
 
 ### 2. Segment Khmer Text (Modes C, B, A)
 

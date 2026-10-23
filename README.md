@@ -62,10 +62,16 @@ uv run kroch-chhmar tokenize "ព្រះរាជាណាចក្រកម�
 uv run kroch-chhmar tokenize "ព្រះរាជាណាចក្រកម្ពុជាមានការសិក្សានិងការអភិវឌ្ឍល្អ។" --mode A
 ```
 
-### 3. Build a Custom User Dictionary
+### 3. Build & Use a Custom User Dictionary
+
+See **[`user_dic.md`](user_dic.md)** for a complete guide on building custom user dictionaries, setting word priorities/costs, and configuring multi-granular splits (`Mode A / B / C`).
 
 ```bash
+# Compile a custom TSV/CSV/TXT wordlist into user_khmer.dic in < 0.1s
 uv run kroch-chhmar ubuild path/to/custom_words.tsv -o data/build/user_khmer.dic
+
+# Tokenize using both system_khmer.dic and user_khmer.dic
+uv run kroch-chhmar tokenize "អត្ថបទភាសាខ្មែរ" --user-dic data/build/user_khmer.dic --mode C
 ```
 
 ### 4. Evaluate Segmentation Benchmark

@@ -7,6 +7,7 @@ from typing import Optional
 
 import typer
 from rich.console import Console
+from rich.panel import Panel
 from rich.table import Table
 
 from kroch_chhmar.dictionary.compound_splitter import CompoundSplitter
@@ -232,6 +233,27 @@ def cmd_build(
     console.print(f"[bold green]Successfully compiled system dictionary:[/bold green] {out}")
 
 
+def _print_missing_system_dic_message(missing_path: Path | str) -> None:
+    """Print a user-friendly Rich panel instructing the user how to build `system_khmer.dic`."""
+    console.print(
+        Panel(
+            f"[bold red]System dictionary (`system_khmer.dic`) was not found at:[/bold red]\n"
+            f"  [yellow]{missing_path}[/yellow]\n\n"
+            f"[bold]You need to build `system_khmer.dic` before running this command:[/bold]\n"
+            f"  1. [cyan]Quick build (built-in seed dataset):[/cyan]\n"
+            f"     [bold green]uv run kroch-chhmar build[/bold green]\n\n"
+            f"  2. [cyan]Full 100k dictionary build (all public datasets):[/cyan]\n"
+            f"     [bold green]uv run kroch-chhmar fetch all[/bold green]\n"
+            f"     [bold green]uv run kroch-chhmar prepare[/bold green]\n"
+            f"     [bold green]uv run kroch-chhmar build[/bold green]\n\n"
+            f"  3. [cyan]Or pass a custom dictionary path:[/cyan]\n"
+            f"     [bold green]--system-dic /path/to/system_khmer.dic[/bold green]",
+            title="Missing System Dictionary (`system_khmer.dic`)",
+            border_style="red",
+        )
+    )
+
+
 @app.command("ubuild")
 def cmd_ubuild(
     lexicon: Path = typer.Argument(..., help="User lexicon TSV/CSV/wordlist file."),
@@ -254,6 +276,10 @@ def cmd_ubuild(
     ),
 ) -> None:
     """Compile a custom user lexicon into a binary `user_khmer.dic` via `sudachipy ubuild`."""
+    if not system_dic.exists():
+        _print_missing_system_dic_message(system_dic)
+        raise typer.Exit(code=1)
+
     estimator = CostEstimator()
     cnt = ingest_lexicon_tsv(lexicon, estimator)
     splitter = CompoundSplitter(
@@ -291,13 +317,27 @@ def cmd_tokenize(
         "-s",
         help="Optional override path for `system_khmer.dic`.",
     ),
+    user_dic: Optional[list[Path]] = typer.Option(
+        None,
+        "--user-dic",
+        "-u",
+        help="One or more compiled user dictionary `.dic` files (`user_khmer.dic`).",
+    ),
 ) -> None:
     """Tokenize Khmer text using `KhmerTokenizer` and display morpheme details."""
-    tokenizer = KhmerTokenizer(
-        config_path=config,
-        system_dic_path=system_dic,
-        default_mode=mode,
-    )
+    try:
+        tokenizer = KhmerTokenizer(
+            config_path=config,
+            system_dic_path=system_dic,
+            user_dic_paths=user_dic,
+            default_mode=mode,
+        )
+    except FileNotFoundError as exc:
+        _print_missing_system_dic_message(
+            system_dic or (REPO_ROOT / "data" / "build" / "system_khmer.dic")
+        )
+        raise typer.Exit(code=1) from exc
+
     morphemes = tokenizer.tokenize(text, mode=mode)
 
     table = Table(title=f"Kroch-Chhmar Segmentation (Mode {mode.value})")
@@ -347,9 +387,26 @@ def cmd_evaluate(
         "-c",
         help="Path to `sudachi.json`.",
     ),
+    system_dic: Optional[Path] = typer.Option(
+        None,
+        "--system-dic",
+        "-s",
+        help="Optional override path for `system_khmer.dic`.",
+    ),
 ) -> None:
     """Evaluate segmentation Precision, Recall, F1, OOV rate, and KCC violation rate."""
-    tokenizer = KhmerTokenizer(config_path=config, default_mode=mode)
+    try:
+        tokenizer = KhmerTokenizer(
+            config_path=config,
+            system_dic_path=system_dic,
+            default_mode=mode,
+        )
+    except FileNotFoundError as exc:
+        _print_missing_system_dic_message(
+            system_dic or (REPO_ROOT / "data" / "build" / "system_khmer.dic")
+        )
+        raise typer.Exit(code=1) from exc
+
     gold_sentences = load_gold_sentences(corpus_file)
     report = evaluate_segmentation(
         tokenizer, gold_sentences, mode=mode, split_compounds=split_compounds

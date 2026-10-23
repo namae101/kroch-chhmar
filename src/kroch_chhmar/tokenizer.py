@@ -130,8 +130,11 @@ class KhmerTokenizer:
 
         if not sys_dic.exists():
             raise FileNotFoundError(
-                f"Compiled system dictionary not found at {sys_dic}. "
-                "Run `kroch-chhmar build` first."
+                f"Compiled system dictionary not found at: {sys_dic}\n"
+                "Please build the system dictionary first by running:\n"
+                "  • Quick seed build : uv run kroch-chhmar build\n"
+                "  • Full 100k build  : uv run kroch-chhmar fetch all && uv run kroch-chhmar prepare && uv run kroch-chhmar build\n"
+                "Or specify an existing `.dic` file via `--system-dic /path/to/system_khmer.dic`."
             )
 
         cfg_data["systemDict"] = str(sys_dic)

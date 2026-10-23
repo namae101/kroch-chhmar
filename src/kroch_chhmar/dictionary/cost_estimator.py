@@ -45,11 +45,13 @@ class CostEstimator:
         self,
         scale_factor: float = 500.0,
         smoothing_alpha: float = 0.5,
-        unseen_base_penalty: int = 5200,
+        unseen_base_penalty: int = 7200,
+        unseen_kcc_penalty: int = 500,
     ) -> None:
         self.scale_factor = scale_factor
         self.smoothing_alpha = smoothing_alpha
         self.unseen_base_penalty = unseen_base_penalty
+        self.unseen_kcc_penalty = unseen_kcc_penalty
         self.stats = LexiconStats()
 
     def add_lexicon_entry(
@@ -147,25 +149,13 @@ class CostEstimator:
         Returns `(unique_normalized_surfaces, unique_surface_pos_pairs)`.
         """
         # 1. Merge untyped words (from frequency lists like khmerlbdict) into existing POS tags
-        for norm, freq in list(self.stats.untyped_words.items()):
+        # without adding raw unsegmented wordlist counts into total_corpus_tokens (which would
+        # dilute sentence-corpus NLL probabilities).
+        for norm, _freq in list(self.stats.untyped_words.items()):
             existing_tags = self.stats.lexicon_words.get(norm)
-            if existing_tags:
-                # Attach frequency to the primary/most frequent known POS tag for this word
-                best_tag = max(
-                    existing_tags,
-                    key=lambda t: (self.stats.word_pos_counts.get((norm, t), 0), t == "NOUN"),
-                )
-                if freq > 0:
-                    self.stats.word_pos_counts[(norm, best_tag)] += freq
-                    self.stats.pos_counts[best_tag] += freq
-                    self.stats.total_corpus_tokens += freq
-            else:
+            if not existing_tags:
                 ud_pos = map_to_ud_pos(None, norm)
                 self.stats.lexicon_words[norm].add(ud_pos)
-                if freq > 0:
-                    self.stats.word_pos_counts[(norm, ud_pos)] += freq
-                    self.stats.pos_counts[ud_pos] += freq
-                    self.stats.total_corpus_tokens += freq
         self.stats.untyped_words.clear()
 
         # 2. Prune noisy minority POS tags from corpus tagging errors (keep tags with >= 10% share or explicit dictionary entries)
@@ -227,11 +217,11 @@ class CostEstimator:
             )
             raw_cost = int(round(-self.scale_factor * math.log(prob)))
         else:
-            # Unseen lexicon word: use smoothed baseline + gentle reward for multi-KCC words
-            # so valid dictionary compounds beat fragmented single-KCC sequences
+            # Unseen lexicon word (count == 0 in sentence corpora): scale penalty gently with KCC length
+            # so unattested multi-word dictionary entries do not greedily override attested corpus words,
+            # while still beating OOV fallback when none of the constituent words are in the corpus.
             kccs = max(count_kccs(norm), 1)
-            length_bonus = min((kccs - 1) * 180, 900)
-            raw_cost = self.unseen_base_penalty - length_bonus
+            raw_cost = min(15000, self.unseen_base_penalty + (kccs - 1) * self.unseen_kcc_penalty)
 
         return max(-32000, min(32000, raw_cost))
 

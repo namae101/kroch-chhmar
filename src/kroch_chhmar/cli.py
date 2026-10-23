@@ -114,7 +114,25 @@ def cmd_prepare(
     if include_raw:
         raw_dir = REPO_ROOT / "data" / "raw"
         if raw_dir.exists():
-            # Check for NICT ALT NOVA parallel files first
+            # 1. Ingest segmented corpora (.pos, .txt, .conllu) first so `splitter.overrides`
+            #    captures canonical compound structures before NICT ALT NOVA and RAC 2022.
+            for f in sorted(raw_dir.glob("*")):
+                if f.name in (
+                    "data_km.km-tok.nova",
+                    "data_km.km-tag.nova",
+                    "README.txt",
+                    "khpos_open_test.pos",
+                    "khpos_close_test.pos",
+                ):
+                    continue
+                if f.suffix.lower() == ".conllu":
+                    c = ingest_conllu_file(f, estimator)
+                    console.print(f"[green]Loaded raw CoNLL-U {f.name}:[/green] {c} sentences")
+                elif f.suffix.lower() in (".txt", ".pos"):
+                    c = ingest_segmented_text_file(f, estimator, splitter=splitter)
+                    console.print(f"[green]Loaded raw corpus {f.name}:[/green] {c} sentences")
+
+            # 2. Ingest NICT ALT NOVA parallel files
             nova_tok = raw_dir / "data_km.km-tok.nova"
             nova_tag = raw_dir / "data_km.km-tag.nova"
             if nova_tok.exists() and nova_tag.exists():
@@ -123,6 +141,7 @@ def cmd_prepare(
                     f"[green]Loaded NICT ALT NOVA corpus ({nova_tok.name} + {nova_tag.name}):[/green] {c} sentences"
                 )
 
+            # 3. Ingest RAC 2022 Dictionary and raw wordlists (.tsv, .csv)
             for f in sorted(raw_dir.glob("*")):
                 if f.name in (
                     "data_km.km-tok.nova",
@@ -138,12 +157,6 @@ def cmd_prepare(
                 elif f.suffix.lower() in (".tsv", ".csv"):
                     c = ingest_lexicon_tsv(f, estimator)
                     console.print(f"[green]Loaded raw lexicon {f.name}:[/green] {c} entries")
-                elif f.suffix.lower() == ".conllu":
-                    c = ingest_conllu_file(f, estimator)
-                    console.print(f"[green]Loaded raw CoNLL-U {f.name}:[/green] {c} sentences")
-                elif f.suffix.lower() in (".txt", ".pos"):
-                    c = ingest_segmented_text_file(f, estimator, splitter=splitter)
-                    console.print(f"[green]Loaded raw corpus {f.name}:[/green] {c} sentences")
 
     for lex_path in lexicon or []:
         c = ingest_lexicon_tsv(lex_path, estimator)
@@ -167,8 +180,10 @@ def cmd_prepare(
         f"  • Exported interim files  : {interim_lex.name}, {interim_corp.name}"
     )
 
-    # Populate CompoundSplitter with all discovered base words and word costs
-    splitter.base_vocab.update(estimator.stats.lexicon_words.keys())
+    # Populate CompoundSplitter with word costs (base_vocab is already populated from
+    # verified root/headword sources during corpus & RAC dictionary ingestion)
+    if not splitter.base_vocab:
+        splitter.base_vocab.update(estimator.stats.lexicon_words.keys())
     splitter.word_costs.update(
         {
             surf: estimator.estimate_word_cost(surf, next(iter(tags)))

@@ -34,10 +34,13 @@ def ingest_lexicon_tsv(
         delimiter = "\t" if p.suffix.lower() in (".tsv", ".txt") else ","
 
     # Infer default POS for proper noun lists (names, places, villages) from khmerlbdict
-    if default_pos is None:
-        stem = p.stem.lower()
-        if any(k in stem for k in ("names", "places", "villages")):
-            default_pos = "PROPN"
+    stem = p.stem.lower()
+    if default_pos is None and any(k in stem for k in ("names", "places", "villages")):
+        default_pos = "PROPN"
+
+    # Uncalibrated raw counts in `khmerlbdict_*` (e.g. 6.4M counts in seafreq) should not be
+    # added directly into sentence-corpus NLL probabilities
+    ignore_numeric_freq = stem.startswith("khmerlbdict_")
 
     count = 0
     with p.open("r", encoding="utf-8") as f:
@@ -61,13 +64,13 @@ def ingest_lexicon_tsv(
 
             if len(parts) == 2:
                 if parts[1].isdigit():
-                    freq = int(parts[1])
+                    freq = 0 if ignore_numeric_freq else int(parts[1])
                 else:
                     pos = parts[1]
             elif len(parts) >= 3:
                 pos = parts[1] if parts[1] and parts[1] != "*" else default_pos
                 if parts[2].isdigit():
-                    freq = int(parts[2])
+                    freq = 0 if ignore_numeric_freq else int(parts[2])
                 if len(parts) >= 4 and parts[3] and parts[3] != "*":
                     reading = parts[3]
 
@@ -275,27 +278,22 @@ def ingest_alt_nova_files(
                 # Register individual leaf words with their inner POS tags
                 for sw, itag in zip(sub_words, inner_tags):
                     if sw:
-                        estimator.add_lexicon_entry(sw, pos=map_to_ud_pos(itag, sw), freq=1)
+                        estimator.add_lexicon_entry(sw, pos=map_to_ud_pos(itag, sw), freq=0)
                         if splitter is not None:
                             splitter.base_vocab.add(sw)
 
-                # Form the compound surface if all sub-words are Khmer script (skip spaced ASCII numbers)
+                # If the bracketed phrase matches an established lexical compound in `splitter.overrides`
+                # (e.g. from khPOS or compounds.yaml), count it as a compound token in the sentence;
+                # otherwise emit the leaf words so syntactic NPs do not greedily merge independent words.
                 clean_subs = [sw for sw in sub_words if sw]
-                if len(clean_subs) >= 2 and all(
-                    any(0x1780 <= ord(c) <= 0x17FF for c in sw) for sw in clean_subs
+                compound_surf = normalize_khmer("".join(clean_subs))
+                if (
+                    len(clean_subs) >= 2
+                    and splitter is not None
+                    and compound_surf in splitter.overrides
                 ):
-                    compound_surf = normalize_khmer("".join(clean_subs))
                     ud_outer = map_to_ud_pos(outer_tag, compound_surf)
                     sentence_pairs.append((compound_surf, ud_outer))
-                    if splitter is not None and compound_surf not in splitter.overrides:
-                        mode = "B" if len(clean_subs) == 2 else "C"
-                        splitter.overrides[compound_surf] = SplitResolution(
-                            surface=compound_surf,
-                            split_type=mode,
-                            split_a=clean_subs,
-                            split_b=clean_subs if mode == "C" else [],
-                            override_pos=ud_outer,
-                        )
                 else:
                     for sw, itag in zip(sub_words, inner_tags):
                         if sw:
@@ -307,6 +305,8 @@ def ingest_alt_nova_files(
                 word_idx += 1
                 if w:
                     sentence_pairs.append((w, map_to_ud_pos(chunk, w)))
+                    if splitter is not None:
+                        splitter.base_vocab.add(w)
 
         if sentence_pairs:
             estimator.add_segmented_sentence(sentence_pairs)

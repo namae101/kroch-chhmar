@@ -74,15 +74,15 @@ To evaluate segmentation without bias, the evaluator concatenates the gold token
 
 | Test Set | Gold Standard Granularity | Mode | Gold Tokens | Pred Tokens | Precision | Recall | **F1 Score** | OOV Rate | **KCC Violation Rate** |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **`OPEN-TEST`** *(1k sents)* | **Base Words (`_` & `~` split)** | **Mode A** | 12,931 | 12,488 | **87.20%** | **84.22%** | **85.68%** | 3.04% | **0.00%** |
-| **`OPEN-TEST`** *(1k sents)* | **Base Words (`_` & `~` split)** | Mode B | 12,931 | 11,032 | 79.13% | 67.51% | 72.86% | 3.44% | **0.00%** |
-| **`OPEN-TEST`** *(1k sents)* | **Base Words (`_` & `~` split)** | Mode C | 12,931 | 10,205 | 75.85% | 59.86% | 66.92% | 3.72% | **0.00%** |
-| **`OPEN-TEST`** *(1k sents)* | **Compounds (`_` & `~` joined)** | **Mode C** | 10,778 | 10,205 | **86.37%** | **81.78%** | **84.01%** | 3.72% | **0.00%** |
-| **`OPEN-TEST`** *(1k sents)* | **Compounds (`_` & `~` joined)** | Mode B | 10,778 | 11,032 | 81.32% | 83.23% | 82.27% | 3.44% | **0.00%** |
-| **`OPEN-TEST`** *(1k sents)* | **Compounds (`_` & `~` joined)** | Mode A | 10,778 | 12,488 | 69.76% | 80.83% | 74.89% | 3.04% | **0.00%** |
-| **`CLOSE-TEST`** *(1k sents)* | **Base Words (`_` & `~` split)** | **Mode A** | 12,467 | 12,022 | **88.12%** | **84.98%** | **86.52%** | 2.65% | **0.00%** |
-| **`CLOSE-TEST`** *(1k sents)* | **Compounds (`_` & `~` joined)** | **Mode C** | 10,397 | 9,777 | **87.04%** | **81.85%** | **84.37%** | 3.26% | **0.00%** |
-| **`CLOSE-TEST`** *(1k sents)* | **Compounds (`_` & `~` joined)** | Mode B | 10,397 | 10,582 | 82.13% | 83.59% | 82.85% | 3.01% | **0.00%** |
+| **`OPEN-TEST`** *(1k sents)* | **Compounds (`_` & `~` joined)** | **Mode C** | 10,778 | 10,680 | **95.25%** | **94.39%** | **94.82%** | 2.81% | **0.00%** |
+| **`OPEN-TEST`** *(1k sents)* | **Compounds (`_` & `~` joined)** | Mode B | 10,778 | 11,172 | 90.27% | 93.57% | 91.89% | 2.69% | **0.00%** |
+| **`OPEN-TEST`** *(1k sents)* | **Compounds (`_` & `~` joined)** | Mode A | 10,778 | 12,930 | 67.46% | 80.92% | 73.58% | 2.32% | **0.00%** |
+| **`OPEN-TEST`** *(1k sents)* | **Base Words (`_` & `~` split)** | **Mode A** | 12,931 | 12,930 | **92.00%** | **92.00%** | **92.00%** | 2.32% | **0.00%** |
+| **`OPEN-TEST`** *(1k sents)* | **Base Words (`_` & `~` split)** | Mode B | 12,931 | 11,172 | 81.45% | 70.37% | 75.51% | 2.69% | **0.00%** |
+| **`OPEN-TEST`** *(1k sents)* | **Base Words (`_` & `~` split)** | Mode C | 12,931 | 10,680 | 79.93% | 66.02% | 72.31% | 2.81% | **0.00%** |
+| **`CLOSE-TEST`** *(1k sents)* | **Compounds (`_` & `~` joined)** | **Mode C** | 10,397 | 10,208 | **97.16%** | **95.39%** | **96.27%** | 2.35% | **0.00%** |
+| **`CLOSE-TEST`** *(1k sents)* | **Compounds (`_` & `~` joined)** | Mode B | 10,397 | 10,707 | 91.62% | 94.35% | 92.97% | 2.24% | **0.00%** |
+| **`CLOSE-TEST`** *(1k sents)* | **Base Words (`_` & `~` split)** | **Mode A** | 12,467 | 12,474 | **92.19%** | **92.24%** | **92.22%** | 1.92% | **0.00%** |
 
 ### 3.2 Vocabulary Extension & Domain-Aligned Dictionary Evaluation
 *(Demonstrating the impact of extending the dictionary with domain vocabulary / test sentences)*:

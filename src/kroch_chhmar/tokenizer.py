@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import enum
 import json
+import re
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,6 +13,31 @@ from typing import Iterable
 from sudachipy import Dictionary, SplitMode as SudachiSplitMode
 
 from kroch_chhmar.normalizer import is_kcc_dependent_start, normalize_khmer
+
+# Structured token patterns (URLs, emails, domains, formatted numbers, acronyms, repeated punctuation)
+_STRUCTURED_SPAN_RE = re.compile(
+    r"(?P<url>https?://[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]+|www\.[A-Za-z0-9][-A-Za-z0-9.]*\.[A-Za-z]{2,}(?:/[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]*)?)"
+    r"|(?P<email>[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})"
+    r"|(?P<domain>(?<![A-Za-z0-9])[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.(?:com|org|net|edu|gov|io|co|kh|info|biz|me|tv|ai|app|dev)(?:\.kh)?(?:/[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]*)?(?![A-Za-z0-9]))"
+    r"|(?P<hashtag>(?<![A-Za-z0-9_])[#@][A-Za-z0-9_]+)"
+    r"|(?P<peyyal>។ល។)"
+    r"|(?P<abbrev>(?:[A-Za-z]\.){2,}|(?:[\u1780-\u17dd]{1,2}\.){2,})"
+    r"|(?P<alnum_hyphen>(?<![A-Za-z0-9])[A-Za-z]+-\d+(?![A-Za-z0-9])|(?<![A-Za-z0-9])[A-Za-z]{2,}-[A-Za-z]{2,}(?:-[A-Za-z]{2,})*(?![A-Za-z0-9])|កូវីដ-[\d០-៩]+)"
+    r"|(?P<number>[\d០-៩]+(?:[.,:][\d០-៩]+)+)"
+    r"|(?P<ellipsis>\.{2,}|…+|[?!]{2,}|-{2,})"
+)
+
+_STRUCTURED_POS_MAP: dict[str, tuple[str, str, str, str, str, str]] = {
+    "url": ("SYM", "URL", "*", "*", "*", "*"),
+    "email": ("SYM", "EMAIL", "*", "*", "*", "*"),
+    "domain": ("PROPN", "DOMAIN", "*", "*", "*", "*"),
+    "hashtag": ("SYM", "TAG", "*", "*", "*", "*"),
+    "peyyal": ("PUNCT", "*", "*", "*", "*", "*"),
+    "abbrev": ("PROPN", "ABBR", "*", "*", "*", "*"),
+    "alnum_hyphen": ("PROPN", "*", "*", "*", "*", "*"),
+    "number": ("NUM", "*", "*", "*", "*", "*"),
+    "ellipsis": ("PUNCT", "*", "*", "*", "*", "*"),
+}
 
 
 class SplitMode(str, enum.Enum):
@@ -90,6 +116,106 @@ def enforce_kcc_boundaries(morphemes: Iterable[KhmerMorpheme]) -> list[KhmerMorp
     return merged
 
 
+def merge_structured_tokens(
+    morphemes: list[KhmerMorpheme],
+    text: str,
+) -> list[KhmerMorpheme]:
+    """
+    Merge contiguous tokens whose character spans `(begin, end)` match structured entities
+    in `text`, including:
+      - URLs (`http://abc.com`, `https://mptc.gov.kh/news?id=1`, `www.example.org`)
+      - Email addresses (`info@rac.edu.kh`)
+      - Bare domains (`abc.com`, `moe.gov.kh`)
+      - Hashtags & mentions (`#កម្ពុជា`, `@user_name`)
+      - Khmer peyyal (`។ល។`) and dotted abbreviations (`គ.ស.`, `ព.ស.`, `អ.ស.ប.`, `U.S.A.`)
+      - Hyphenated alphanumeric terms (`COVID-19`, `កូវីដ-១៩`, `Wi-Fi`)
+      - Formatted numbers, decimals, thousands, and clock times (`២.៦២៥`, `1,250.50`, `០៨:៣០`)
+      - Repeated punctuation / ellipses (`...`, `?!`, `!!`, `---`)
+    """
+    if len(morphemes) <= 1 or not text:
+        return morphemes
+
+    matches = list(_STRUCTURED_SPAN_RE.finditer(text))
+    if not matches:
+        return morphemes
+
+    # Map character offsets to morpheme indices for exact span alignment
+    begin_to_idx = {m.begin: i for i, m in enumerate(morphemes)}
+    end_to_idx = {m.end: i for i, m in enumerate(morphemes)}
+
+    merge_ranges: list[tuple[int, int, tuple[str, str, str, str, str, str]]] = []
+    last_end_idx = -1
+
+    for match in matches:
+        span_start, span_end = match.span()
+        # Trim trailing sentence punctuation (e.g. '.', ',', ':', ';') from URLs/domains/emails
+        kind = match.lastgroup or "url"
+        if kind in ("url", "domain", "email"):
+            while span_end > span_start and text[span_end - 1] in ".,:;!?":
+                span_end -= 1
+
+        start_idx = begin_to_idx.get(span_start)
+        end_idx = end_to_idx.get(span_end)
+        if start_idx is None or end_idx is None or start_idx >= end_idx:
+            continue
+        if start_idx <= last_end_idx:
+            continue
+
+        # Ensure contiguous tokens with no whitespace gaps inside the span
+        sub_slice = morphemes[start_idx : end_idx + 1]
+        is_contiguous = all(
+            sub_slice[k].end == sub_slice[k + 1].begin for k in range(len(sub_slice) - 1)
+        )
+        if not is_contiguous:
+            continue
+
+        pos_tuple = _STRUCTURED_POS_MAP.get(kind, ("X", "*", "*", "*", "*", "*"))
+        merge_ranges.append((start_idx, end_idx, pos_tuple))
+        last_end_idx = end_idx
+
+        # If trimming trailing dots left a contiguous ellipsis (e.g. "info@rac.edu.kh..."), merge those dots too
+        if span_end < match.end():
+            rem_text = text[span_end : match.end()]
+            if re.fullmatch(r"\.{2,}|[?!]{2,}", rem_text):
+                r_start = begin_to_idx.get(span_end)
+                r_end = end_to_idx.get(match.end())
+                if r_start is not None and r_end is not None and r_start < r_end:
+                    merge_ranges.append((r_start, r_end, _STRUCTURED_POS_MAP["ellipsis"]))
+                    last_end_idx = r_end
+
+    if not merge_ranges:
+        return morphemes
+
+    result: list[KhmerMorpheme] = []
+    range_ptr = 0
+    i = 0
+    n = len(morphemes)
+
+    while i < n:
+        if range_ptr < len(merge_ranges) and i == merge_ranges[range_ptr][0]:
+            start_i, end_i, pos_tuple = merge_ranges[range_ptr]
+            group = morphemes[start_i : end_i + 1]
+            span_surface = text[group[0].begin : group[-1].end]
+            result.append(
+                KhmerMorpheme(
+                    surface=span_surface,
+                    normalized_form=span_surface,
+                    reading_form=span_surface,
+                    pos=pos_tuple,
+                    begin=group[0].begin,
+                    end=group[-1].end,
+                    is_oov=any(m.is_oov for m in group),
+                )
+            )
+            i = end_i + 1
+            range_ptr += 1
+        else:
+            result.append(morphemes[i])
+            i += 1
+
+    return result
+
+
 class KhmerTokenizer:
     """
     Khmer-aware wrapper around `sudachipy.Dictionary` and `sudachipy.Tokenizer`.
@@ -107,10 +233,12 @@ class KhmerTokenizer:
         default_mode: SplitMode | str = SplitMode.C,
         strip_zwsp: bool = True,
         enforce_kcc: bool = True,
+        merge_structured: bool = True,
     ) -> None:
         self.default_mode = SplitMode(default_mode)
         self.strip_zwsp = strip_zwsp
         self.enforce_kcc = enforce_kcc
+        self.merge_structured = merge_structured
 
         repo_root = Path(__file__).resolve().parents[2]
         default_cfg = repo_root / "configs" / "sudachi.json"
@@ -213,7 +341,9 @@ class KhmerTokenizer:
             )
 
         if self.enforce_kcc:
-            return enforce_kcc_boundaries(converted)
+            converted = enforce_kcc_boundaries(converted)
+        if self.merge_structured:
+            converted = merge_structured_tokens(converted, normalized_input)
         return converted
 
     def segment(

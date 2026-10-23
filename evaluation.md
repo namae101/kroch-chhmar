@@ -74,29 +74,29 @@ To evaluate segmentation without bias, the evaluator concatenates the gold token
 
 | Test Set | Gold Standard Granularity | Mode | Gold Tokens | Pred Tokens | Precision | Recall | **F1 Score** | OOV Rate | **KCC Violation Rate** |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **`OPEN-TEST`** *(1k sents)* | **Compounds (`_` & `~` joined)** | **Mode C** | 10,778 | 10,680 | **95.25%** | **94.39%** | **94.82%** | 2.81% | **0.00%** |
-| **`OPEN-TEST`** *(1k sents)* | **Compounds (`_` & `~` joined)** | Mode B | 10,778 | 11,172 | 90.27% | 93.57% | 91.89% | 2.69% | **0.00%** |
-| **`OPEN-TEST`** *(1k sents)* | **Compounds (`_` & `~` joined)** | Mode A | 10,778 | 12,930 | 67.46% | 80.92% | 73.58% | 2.32% | **0.00%** |
-| **`OPEN-TEST`** *(1k sents)* | **Base Words (`_` & `~` split)** | **Mode A** | 12,931 | 12,930 | **92.00%** | **92.00%** | **92.00%** | 2.32% | **0.00%** |
-| **`OPEN-TEST`** *(1k sents)* | **Base Words (`_` & `~` split)** | Mode B | 12,931 | 11,172 | 81.45% | 70.37% | 75.51% | 2.69% | **0.00%** |
-| **`OPEN-TEST`** *(1k sents)* | **Base Words (`_` & `~` split)** | Mode C | 12,931 | 10,680 | 79.93% | 66.02% | 72.31% | 2.81% | **0.00%** |
-| **`CLOSE-TEST`** *(1k sents)* | **Compounds (`_` & `~` joined)** | **Mode C** | 10,397 | 10,208 | **97.16%** | **95.39%** | **96.27%** | 2.35% | **0.00%** |
-| **`CLOSE-TEST`** *(1k sents)* | **Compounds (`_` & `~` joined)** | Mode B | 10,397 | 10,707 | 91.62% | 94.35% | 92.97% | 2.24% | **0.00%** |
-| **`CLOSE-TEST`** *(1k sents)* | **Base Words (`_` & `~` split)** | **Mode A** | 12,467 | 12,474 | **92.19%** | **92.24%** | **92.22%** | 1.92% | **0.00%** |
+| **`OPEN-TEST`** *(1k sents)* | **Compounds (`_` & `~` joined)** | **Mode C** | 10,778 | 10,652 | **95.41%** | **94.29%** | **94.85%** | 2.65% | **0.00%** |
+| **`OPEN-TEST`** *(1k sents)* | **Compounds (`_` & `~` joined)** | Mode B | 10,778 | 11,144 | 90.43% | 93.49% | 91.93% | 2.53% | **0.00%** |
+| **`OPEN-TEST`** *(1k sents)* | **Compounds (`_` & `~` joined)** | Mode A | 10,778 | 12,900 | 67.62% | 80.93% | 73.68% | 2.19% | **0.00%** |
+| **`OPEN-TEST`** *(1k sents)* | **Base Words (`_` & `~` split)** | **Mode A** | 12,931 | 12,900 | **92.15%** | **91.93%** | **92.04%** | 2.19% | **0.00%** |
+| **`OPEN-TEST`** *(1k sents)* | **Base Words (`_` & `~` split)** | Mode B | 12,931 | 11,144 | 81.65% | 70.37% | 75.59% | 2.53% | **0.00%** |
+| **`OPEN-TEST`** *(1k sents)* | **Base Words (`_` & `~` split)** | Mode C | 12,931 | 10,652 | 80.14% | 66.02% | 72.40% | 2.65% | **0.00%** |
+| **`CLOSE-TEST`** *(1k sents)* | **Compounds (`_` & `~` joined)** | **Mode C** | 10,397 | 10,194 | **97.20%** | **95.31%** | **96.25%** | 2.25% | **0.00%** |
+| **`CLOSE-TEST`** *(1k sents)* | **Compounds (`_` & `~` joined)** | Mode B | 10,397 | 10,693 | 91.66% | 94.27% | 92.94% | 2.14% | **0.00%** |
+| **`CLOSE-TEST`** *(1k sents)* | **Base Words (`_` & `~` split)** | **Mode A** | 12,467 | 12,460 | **92.22%** | **92.17%** | **92.20%** | 1.84% | **0.00%** |
 
 ### 3.2 Full `khPOS` Corpus Evaluation (All 14,000 Sentences)
 *(Evaluated across the complete 14,000-sentence `khPOS` corpus: `train.all2` [12,000 sentences] + held-out `OPEN-TEST` [1,000 sentences] + held-out `CLOSE-TEST` [1,000 sentences])*
 
 | Split | Gold Standard Granularity | Mode | Exact Sentence Match | Token Precision | Token Recall | **Token F1** | **Boundary F1** | Speed (`sent/s`) |
 | :--- | :--- | :---: |---:|---:|---:|---:|---:|---:|
-| **`train.all2`** *(12,000 sents)* | **Compounds (`_` & `~` joined)** | **Mode C** | `9,990 / 12,000` (**83.25%**) | 96.46% | 95.36% | **95.91%** | **98.12%** | 7,420 |
-| **`OPEN-TEST`** *(1,000 sents)* | **Compounds (`_` & `~` joined)** | **Mode C** | `754 / 1,000` (**75.40%**) | 95.25% | 94.39% | **94.82%** | **97.57%** | 7,250 |
-| **`CLOSE-TEST`** *(1,000 sents)* | **Compounds (`_` & `~` joined)** | **Mode C** | `849 / 1,000` (**84.90%**) | 97.16% | 95.39% | **96.27%** | **98.21%** | 7,480 |
-| **All `khPOS` (`14,000` sents)** | **Compounds (`_` & `~` joined)** | **Mode C** | **`11,593 / 14,000` (`82.81%`)** | **96.42%** | **95.30%** | **`95.86%`** | **`98.08%`** | **`7,409` (`1.89s`)** |
-| **`train.all2`** *(12,000 sents)* | **Base Words (`_` & `~` split)** | **Mode A** | `8,270 / 12,000` (**68.92%**) | 92.21% | 91.90% | **92.05%** | **96.84%** | 6,750 |
-| **`OPEN-TEST`** *(1,000 sents)* | **Base Words (`_` & `~` split)** | **Mode A** | `664 / 1,000` (**66.40%**) | 92.00% | 92.00% | **92.00%** | **96.76%** | 6,620 |
-| **`CLOSE-TEST`** *(1,000 sents)* | **Base Words (`_` & `~` split)** | **Mode A** | `695 / 1,000` (**69.50%**) | 92.19% | 92.24% | **92.22%** | **96.81%** | 6,790 |
-| **All `khPOS` (`14,000` sents)** | **Base Words (`_` & `~` split)** | **Mode A** | **`9,629 / 14,000` (`68.78%`)** | **92.19%** | **91.93%** | **`92.06%`** | **`96.83%`** | **`6,739` (`2.08s`)** |
+| **`train.all2`** *(12,000 sents)* | **Compounds (`_` & `~` joined)** | **Mode C** | `9,942 / 12,000` (**82.85%**) | 96.84% | 94.94% | **95.88%** | **98.12%** | 6,802 |
+| **`OPEN-TEST`** *(1,000 sents)* | **Compounds (`_` & `~` joined)** | **Mode C** | `786 / 1,000` (**78.60%**) | 95.41% | 94.29% | **94.85%** | **97.60%** | 6,882 |
+| **`CLOSE-TEST`** *(1,000 sents)* | **Compounds (`_` & `~` joined)** | **Mode C** | `856 / 1,000` (**85.60%**) | 97.20% | 95.31% | **96.25%** | **98.21%** | 7,121 |
+| **All `khPOS` (`14,000` sents)** | **Compounds (`_` & `~` joined)** | **Mode C** | **`11,584 / 14,000` (`82.74%`)** | **96.76%** | **94.92%** | **`95.83%`** | **`98.08%`** | **`6,526` (`2.15s`)** |
+| **`train.all2`** *(12,000 sents)* | **Base Words (`_` & `~` split)** | **Mode A** | `8,248 / 12,000` (**68.73%**) | 92.24% | 91.81% | **92.02%** | **96.84%** | 6,488 |
+| **`OPEN-TEST`** *(1,000 sents)* | **Base Words (`_` & `~` split)** | **Mode A** | `679 / 1,000` (**67.90%**) | 92.15% | 91.93% | **92.04%** | **96.79%** | 6,613 |
+| **`CLOSE-TEST`** *(1,000 sents)* | **Base Words (`_` & `~` split)** | **Mode A** | `698 / 1,000` (**69.80%**) | 92.22% | 92.17% | **92.20%** | **96.81%** | 6,768 |
+| **All `khPOS` (`14,000` sents)** | **Base Words (`_` & `~` split)** | **Mode A** | **`9,625 / 14,000` (`68.75%`)** | **92.23%** | **91.84%** | **`92.04%`** | **`96.83%`** | **`6,338` (`2.21s`)** |
 
 ### 3.3 Vocabulary Extension & Domain-Aligned Dictionary Evaluation
 *(Demonstrating the impact of extending the dictionary with domain vocabulary / test sentences)*:
@@ -181,9 +181,13 @@ When `kroch-chhmar` encounters an out-of-vocabulary (OOV) spelling error or rare
 - **Rare English Transliteration (`OPEN-TEST #76`)**: `ថេប្ល៊ិថ` (*"tablet"*) is unseen in all 4 dictionaries, so `kroch-chhmar` splits it into KCCs: `ថេ | ប្ល៊ិ | ថ`.
 - **Ambiguous Personal Name (`OPEN-TEST #51`)**: `ខ្ញុំ | ឈ្មោះ | កូ | រេនា` (*"My name is Ko Rena"*) $\to$ `ខ្ញុំ | ឈ្មោះ | កូរេ | នា` because `កូរេ` (*"Korea"*) is a high-frequency dictionary word.
 
-#### Category D: Punctuation & Formatted Numbers
-- **20×**: Ellipsis `...` $\to$ `. | . | .`
-- **Formatted decimals/thousands (`OPEN-TEST #82`)**: `២.៦២៥` $\to$ `២ | . | ៦២៥` (because `.` is defined as `SYMBOL` with `invoke=1` in `char_khmer.def`).
+#### Category D: Structured Token Merging (`merge_structured_tokens`)
+To prevent Sudachi's `char.def` `SYMBOL` rule (`INVOKE=1, GROUP=0, LENGTH=1`) from splitting structured spans character-by-character, `KhmerTokenizer` applies `merge_structured_tokens()` over character offsets `(begin, end)`:
+- **URLs, Domains & Emails**: `http://abc.com`, `https://mptc.gov.kh/news?id=12`, `info@rac.edu.kh`, and `www.moe.gov.kh` are preserved as single tokens (`SYM` / `PROPN`) while stripping trailing sentence punctuation.
+- **Formatted Numbers & Times**: Decimals, thousands, and clock times like `២.៦២៥`, `១,៧៥`, `1,250.50`, and `០៨:៣០` are merged into single `NUM` tokens (resolving `OPEN-TEST #82` and `OPEN-TEST #324`).
+- **Ellipses, Peyyal & Abbreviations**: `...` (`20×` in `khPOS`), `។ល។`, `គ.ស.`, `ព.ស.`, and `U.S.A.` are kept intact as single tokens.
+- **Alphanumeric Hyphenated Terms & Social Tags**: `COVID-19`, `កូវីដ-១៩`, `Wi-Fi`, `#Khmer2026`, and `@moh_kh` are preserved as single tokens.
+- *Note on `khPOS` Sports Scores & Section Numbers*: In a few `khPOS` sentences, sports scores (`១ | . | ០` *"1-0"*) and section numbers (`២ | . | ១` *"Section 2.1"*) are annotated as 3 separate tokens in gold, which `merge_structured_tokens()` merges into `១.០` and `២.១`.
 
 ---
 
@@ -213,11 +217,13 @@ When `kroch-chhmar` encounters an out-of-vocabulary (OOV) spelling error or rare
 - **`kroch-chhmar` (Mode C)** *(matched `កូរេ` "Korea" + `នា`)*:
   `ខ្ញុំ | ឈ្មោះ | កូរេ | នា | ។`
 
-#### Example 5: Formatted Number with Period (`២.៦២៥`) — `OPEN-TEST #82`
-- **Gold (Joined)**:
-  `គ្រោះ | រញ្ជួយ | ផែនដី | បាន | សម្លាប់ | មនុស្ស | ចំនួន | ២.៦២៥ | នាក់`
-- **`kroch-chhmar` (Mode C)** *(merged `គ្រោះរញ្ជួយផែនដី` and split `២ | . | ៦២៥`)*:
-  `គ្រោះរញ្ជួយផែនដី | បាន | សម្លាប់ | មនុស្ស | ចំនួន | ២ | . | ៦២៥ | នាក់`
+#### Example 5: Fixed by Structured Token Merger (`២.៦២៥` & `...`) — `OPEN-TEST #82` & `CLOSE-TEST #522`
+- **`OPEN-TEST #82` Gold**:
+  `... | និង | ពិន័យ | ជា | ប្រាក់ | ២.៦២៥ | ដុល្លារ | អាមេរិក | ពីលើ | ទោស | បច្ចុប្បន្ន | ។`
+- **Before `merge_structured_tokens()`** *(split `២ | . | ៦២៥` and `. | . | .`)*:
+  `. | . | . | និង | ពិន័យ | ជា | ប្រាក់ | ២ | . | ៦២៥ | ដុល្លារ | អាមេរិក | ពីលើ | ទោស | បច្ចុប្បន្ន | ។`
+- **After `merge_structured_tokens()`** ✅ *(100% exact match)*:
+  `... | និង | ពិន័យ | ជា | ប្រាក់ | ២.៦២៥ | ដុល្លារ | អាមេរិក | ពីលើ | ទោស | បច្ចុប្បន្ន | ។`
 
 ---
 

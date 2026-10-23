@@ -125,3 +125,33 @@ def test_evaluation_benchmark_zero_kcc_violations() -> None:
     assert report.f1 >= 0.90
     assert report.oov_rate == 0.0
     assert report.kcc_violation_rate == 0.0
+
+
+def test_structured_token_merging() -> None:
+    tokenizer = KhmerTokenizer()
+
+    # URLs, bare domains, emails, and ellipsis
+    web_text = "សូមចូលទៅកាន់ http://abc.com ឬ https://mptc.gov.kh/news?id=12 និង info@rac.edu.kh ឬ www.moe.gov.kh..."
+    web_tokens = tokenizer.segment(web_text, mode=SplitMode.C)
+    assert "http://abc.com" in web_tokens
+    assert "https://mptc.gov.kh/news?id=12" in web_tokens
+    assert "info@rac.edu.kh" in web_tokens
+    assert "www.moe.gov.kh" in web_tokens
+    assert "..." in web_tokens
+
+    # Formatted numbers, decimals, thousands, clock times, and peyyal
+    num_text = "ចំនួន ២.៦២៥ នាក់ និង 1,250.50 ដុល្លារ នៅម៉ោង ០៨:៣០ ព្រឹក ក្នុង គ.ស. ១៨៦៥ ។ល។"
+    num_tokens = tokenizer.segment(num_text, mode=SplitMode.C)
+    assert "២.៦២៥" in num_tokens
+    assert "1,250.50" in num_tokens
+    assert "០៨:៣០" in num_tokens
+    assert "គ.ស." in num_tokens
+    assert "។ល។" in num_tokens
+
+    # Alphanumeric hyphenated terms and social tags
+    tag_text = "ជំងឺ COVID-19 និង កូវីដ-១៩ តាម #Khmer2026 @moh_kh"
+    tag_tokens = tokenizer.segment(tag_text, mode=SplitMode.C)
+    assert "COVID-19" in tag_tokens
+    assert "កូវីដ-១៩" in tag_tokens
+    assert "#Khmer2026" in tag_tokens
+    assert "@moh_kh" in tag_tokens

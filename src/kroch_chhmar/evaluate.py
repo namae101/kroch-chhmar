@@ -35,10 +35,38 @@ def _tokens_to_spans(tokens: list[str]) -> set[tuple[int, int]]:
     return spans
 
 
+def _clean_gold_token(raw_tok: str, split_compounds: bool = False) -> list[str]:
+    """
+    Strip optional `/POS` suffix and normalize `khPOS` compound separators (`_` and `~`).
+    If `split_compounds=False` (default), `_` and `~` are joined into a single compound token.
+    If `split_compounds=True`, `_` and `~` are split into sub-tokens.
+    """
+    if "/" in raw_tok and len(raw_tok) > 1 and not raw_tok.startswith("/"):
+        surf = raw_tok.rsplit("/", 1)[0].strip()
+    else:
+        surf = raw_tok.strip()
+
+    if not surf:
+        return []
+
+    if ("_" in surf or "~" in surf) and len(surf) > 1:
+        import re
+
+        parts = [normalize_khmer(p) for p in re.split(r"[_~]+", surf) if normalize_khmer(p)]
+        if split_compounds:
+            return parts
+        joined = normalize_khmer("".join(parts))
+        return [joined] if joined else []
+
+    norm = normalize_khmer(surf)
+    return [norm] if norm else []
+
+
 def evaluate_segmentation(
     tokenizer: KhmerTokenizer,
     gold_sentences: list[list[str]],
     mode: SplitMode | str = SplitMode.C,
+    split_compounds: bool = False,
 ) -> EvaluationReport:
     """
     Evaluate `tokenizer` on a list of gold-segmented sentences.
@@ -51,11 +79,9 @@ def evaluate_segmentation(
     total_kcc_violations = 0
 
     for raw_gold_tokens in gold_sentences:
-        norm_gold = [
-            normalize_khmer(tok.split("/")[0].strip())
-            for tok in raw_gold_tokens
-            if normalize_khmer(tok.split("/")[0].strip())
-        ]
+        norm_gold: list[str] = []
+        for tok in raw_gold_tokens:
+            norm_gold.extend(_clean_gold_token(tok, split_compounds=split_compounds))
         if not norm_gold:
             continue
 

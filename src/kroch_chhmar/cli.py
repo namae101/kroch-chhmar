@@ -123,7 +123,11 @@ def cmd_prepare(
                 )
 
             for f in sorted(raw_dir.glob("*")):
-                if f.name in ("data_km.km-tok.nova", "data_km.km-tag.nova", "README.txt"):
+                if f.name in (
+                    "data_km.km-tok.nova",
+                    "data_km.km-tag.nova",
+                    "README.txt",
+                ):
                     continue
                 if f.name == "RAC-Khmer-Dict-2022.csv":
                     c = ingest_rac_dictionary_csv(f, estimator, splitter=splitter)
@@ -332,6 +336,11 @@ def cmd_evaluate(
         "-m",
         help="Split granularity mode (A, B, or C).",
     ),
+    split_compounds: bool = typer.Option(
+        False,
+        "--split-compounds/--join-compounds",
+        help="Whether to split khPOS '_' and '~' compound annotations into base words.",
+    ),
     config: Path = typer.Option(
         REPO_ROOT / "configs" / "sudachi.json",
         "--config",
@@ -342,7 +351,9 @@ def cmd_evaluate(
     """Evaluate segmentation Precision, Recall, F1, OOV rate, and KCC violation rate."""
     tokenizer = KhmerTokenizer(config_path=config, default_mode=mode)
     gold_sentences = load_gold_sentences(corpus_file)
-    report = evaluate_segmentation(tokenizer, gold_sentences, mode=mode)
+    report = evaluate_segmentation(
+        tokenizer, gold_sentences, mode=mode, split_compounds=split_compounds
+    )
 
     table = Table(title=f"Evaluation Report ({corpus_file.name} - Mode {mode.value})")
     table.add_column("Metric", style="bold")

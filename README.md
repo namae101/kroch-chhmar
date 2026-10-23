@@ -70,9 +70,23 @@ uv run kroch-chhmar ubuild path/to/custom_words.tsv -o data/build/user_khmer.dic
 
 ### 4. Evaluate Segmentation Benchmark
 
+See **[`evaluation.md`](evaluation.md)** for full instructions on running the evaluation suite, detailed explanations of every metric, OOV analysis, and multi-granular discussions.
+
 ```bash
-uv run kroch-chhmar evaluate --mode C
+# Evaluate Mode C against compound-level gold segmentation
+uv run kroch-chhmar evaluate -f data/raw/khpos_open_test.pos --mode C --join-compounds
+
+# Evaluate Mode A against base-word (sub-compound) gold segmentation
+uv run kroch-chhmar evaluate -f data/raw/khpos_open_test.pos --mode A --split-compounds
 ```
+
+#### Summary Evaluation Results (`OPEN-TEST` & `CLOSE-TEST`, 1,000 Sentences Each)
+
+| Dictionary Configuration | `OPEN-TEST` F1 *(Compounds Joined)* | `OPEN-TEST` F1 *(Base Words Split)* | `CLOSE-TEST` F1 *(Compounds Joined)* | `CLOSE-TEST` F1 *(Base Words Split)* | KCC Violations | Speed (1k sents) |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **`khPOS`-Aligned Dict (`Mode C` / `Mode A`)** | **98.35%** *(Mode C)* | **94.89%** *(Mode A)* | **98.24%** *(Mode C)* | **94.62%** *(Mode A)* | **0.00%** | **0.28s** |
+| **Full 4-Dataset 100k Dict (Vocab Extended)** | **84.79%** *(Mode C)* | **86.26%** *(Mode A)* | **84.44%** *(Mode C)* | **86.77%** *(Mode A)* | **0.00%** | **0.28s** |
+| **Full 4-Dataset 100k Dict (Held-Out Test)** | **84.03%** *(Mode C)* | **85.90%** *(Mode A)* | **84.44%** *(Mode C)* | **86.68%** *(Mode A)* | **0.00%** | **0.28s** |
 
 ### 5. Python API Usage
 

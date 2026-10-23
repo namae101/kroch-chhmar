@@ -1,0 +1,7 @@
+# Input text rewrite definition for Sudachi-Khmer
+# Ignored normalize characters
+# Format: [ignore normalize single chars] or [replace source target]
+
+# Replace deprecated independent vowels per Unicode Khmer recommendations
+ឣ អ
+ឤ អា

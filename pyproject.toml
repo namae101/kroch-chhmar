@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sudachi-khmer"
+version = "0.1.0"
+description = "Workflow for generating Sudachi-compatible Khmer dictionaries and KCC-aware word segmentation plugin"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "sudachipy>=0.6.8",
+    "typer>=0.12.0",
+    "rich>=13.0.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+]
+
+[project.scripts]
+sudachi-khmer = "sudachi_khmer.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sudachi_khmer"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

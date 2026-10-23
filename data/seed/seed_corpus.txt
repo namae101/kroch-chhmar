@@ -1,0 +1,14 @@
+# Seed Segmented Khmer Corpus for Sudachi-Khmer
+# Format: space-separated word/POS or plain words
+ខ្ញុំ/PRON ស្រឡាញ់/VERB ប្រទេសកម្ពុជា/PROPN ណាស់/ADV ។/PUNCT
+សិស្ស/NOUN ទៅ/VERB សាលារៀន/NOUN នៅ/ADP ពេល/NOUN ព្រឹក/NOUN ។/PUNCT
+អ្នកគ្រូ/NOUN កំពុង/AUX បង្រៀន/VERB ភាសាខ្មែរ/NOUN នៅក្នុង/ADP សាលា/NOUN ។/PUNCT
+ព្រះរាជាណាចក្រកម្ពុជា/PROPN មាន/VERB វប្បធម៌/NOUN ដ៏/PART ល្អ/ADJ ស្អាត/ADJ ។/PUNCT
+ក្រសួងអប់រំយុវជននិងកីឡា/PROPN បាន/AUX រៀបចំ/VERB ការសិក្សា/NOUN ថ្មី/ADJ ។/PUNCT
+ការអភិវឌ្ឍ/NOUN បច្ចេកវិទ្យា/NOUN និង/CCONJ បញ្ញាសិប្បនិម្មិត/NOUN មាន/VERB សារៈសំខាន់/NOUN ខ្លាំង/ADV ណាស់/ADV ។/PUNCT
+គាត់/PRON ធ្វើ/VERB ការងារ/NOUN នៅ/ADP មន្ទីរពេទ្យ/NOUN ក្នុង/ADP រាជធានីភ្នំពេញ/PROPN ។/PUNCT
+យើង/PRON ត្រូវ/AUX ជួយ/VERB ការពារ/VERB បរិស្ថាន/NOUN និង/CCONJ ធម្មជាតិ/NOUN ។/PUNCT
+ប្រជាជន/NOUN ខ្មែរ/PROPN រស់នៅ/VERB ដោយ/ADP សន្តិភាព/NOUN និង/CCONJ ភាពជោគជ័យ/NOUN ។/PUNCT
+គាត់/PRON ចូលចិត្ត/VERB អាន/VERB សៀវភៅ/NOUN និង/CCONJ សរសេរ/VERB ភាសាខ្មែរ/NOUN ។/PUNCT
+អ្នកស្រុក/NOUN ទៅ/VERB ផ្សារ/NOUN ដើម្បី/SCONJ ទិញ/VERB បាយ/NOUN និង/CCONJ ទឹក/NOUN ។/PUNCT
+សុខភាព/NOUN ល្អ/ADJ គឺ/AUX ជា/AUX ទ្រព្យសម្បត្តិ/NOUN ដ៏/PART សំខាន់/ADJ សម្រាប់/ADP មនុស្ស/NOUN គ្រប់/DET រូប/NOUN ។/PUNCT

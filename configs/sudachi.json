@@ -1,0 +1,27 @@
+{
+    "systemDict": "../data/build/system_khmer.dic",
+    "characterDefinitionFile": "char.def",
+    "inputTextPlugin": [
+        {
+            "class": "com.worksap.nlp.sudachi.DefaultInputTextPlugin",
+            "rewriteDef": "rewrite.def"
+        }
+    ],
+    "oovProviderPlugin": [
+        {
+            "class": "com.worksap.nlp.sudachi.MeCabOovPlugin",
+            "charDef": "char.def",
+            "unkDef": "unk.def",
+            "userPOS": "allow"
+        },
+        {
+            "class": "com.worksap.nlp.sudachi.SimpleOovPlugin",
+            "oovPOS": ["X", "*", "*", "*", "*", "*"],
+            "leftId": 16,
+            "rightId": 16,
+            "cost": 12000,
+            "userPOS": "allow"
+        }
+    ],
+    "pathRewritePlugin": []
+}

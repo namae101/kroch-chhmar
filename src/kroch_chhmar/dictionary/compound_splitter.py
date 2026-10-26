@@ -78,6 +78,26 @@ class CompoundSplitter:
                 override_pos=pos,
             )
 
+    def canonicalize_vocab(self, canonical_fn) -> None:
+        """Harmonize `base_vocab`, `prefixes`, and `overrides` to canonical RAC forms."""
+        self.base_vocab = {canonical_fn(w) for w in self.base_vocab if w}
+        self.prefixes = list(dict.fromkeys(canonical_fn(p) for p in self.prefixes if p))
+        new_overrides: dict[str, SplitResolution] = {}
+        for surf, res in self.overrides.items():
+            c_split_a = [canonical_fn(u) for u in res.split_a]
+            c_split_b = [canonical_fn(u) for u in res.split_b]
+            c_surf = "".join(c_split_a) if c_split_a else canonical_fn(surf)
+            new_overrides[c_surf] = SplitResolution(
+                surface=c_surf,
+                split_type=res.split_type,
+                split_a=c_split_a,
+                split_b=c_split_b,
+                override_pos=res.override_pos,
+            )
+            for u in c_split_a:
+                self.base_vocab.add(u)
+        self.overrides = new_overrides
+
     def _dp_segment_into_base_words(self, surface: str) -> list[str] | None:
         """
         Decompose `surface` into a sequence of >=2 known base words in `self.base_vocab`,

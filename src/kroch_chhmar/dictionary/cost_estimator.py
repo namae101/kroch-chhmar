@@ -15,7 +15,7 @@ from kroch_chhmar.dictionary.pos_mapper import (
     map_to_ud_pos,
     pos_to_id,
 )
-from kroch_chhmar.normalizer import count_kccs, normalize_khmer
+from kroch_chhmar.normalizer import coeng_skeleton, count_kccs, normalize_khmer
 
 
 @dataclass
@@ -28,6 +28,7 @@ class LexiconStats:
     lexicon_words: dict[str, set[str]] = field(default_factory=lambda: defaultdict(set))
     untyped_words: Counter[str] = field(default_factory=Counter)
     reading_forms: dict[str, str] = field(default_factory=dict)
+    canonical_forms: dict[str, str] = field(default_factory=dict)
     raw_lexicon_rows: int = 0
     raw_sentences: int = 0
     seen_sentence_hashes: set[str] = field(default_factory=set)
@@ -54,12 +55,29 @@ class CostEstimator:
         self.unseen_kcc_penalty = unseen_kcc_penalty
         self.stats = LexiconStats()
 
+    def register_canonical_surface(self, surface: str) -> None:
+        """Register `surface` as the authoritative orthographic form (e.g. RAC 2022) for its Coeng DA/TA skeleton."""
+        norm = normalize_khmer(surface.strip())
+        if not norm or ("\u17d2\u178a" not in norm and "\u17d2\u178f" not in norm):
+            return
+        skel = coeng_skeleton(norm)
+        if skel not in self.stats.canonical_forms or "\u17d2\u178a" in norm:
+            self.stats.canonical_forms[skel] = norm
+
+    def get_canonical_form(self, surface: str) -> str:
+        """Return the authoritative RAC canonical form for `surface` if one is registered."""
+        norm = normalize_khmer(surface.strip())
+        if not norm or ("\u17d2\u178a" not in norm and "\u17d2\u178f" not in norm):
+            return norm
+        return self.stats.canonical_forms.get(coeng_skeleton(norm), norm)
+
     def add_lexicon_entry(
         self,
         surface: str,
         pos: str | None = None,
         freq: int = 0,
         reading: str | None = None,
+        is_canonical: bool = False,
     ) -> None:
         """
         Normalize `surface` and register/merge it in the lexicon.
@@ -69,6 +87,8 @@ class CostEstimator:
         norm = normalize_khmer(surface.strip())
         if not norm:
             return
+        if is_canonical:
+            self.register_canonical_surface(norm)
         self.stats.raw_lexicon_rows += 1
         if reading:
             norm_reading = normalize_khmer(reading.strip())
@@ -145,9 +165,37 @@ class CostEstimator:
     def finalize_deduplication(self) -> tuple[int, int]:
         """
         Merge untyped wordlist frequencies into existing normalized `(surface, pos)` entries,
+        harmonize Coeng DA (`្ដ`) / Coeng TA (`្ត`) visual twins to their canonical RAC form,
         and prune noisy low-frequency POS tags when a word has a clear dominant POS.
         Returns `(unique_normalized_surfaces, unique_surface_pos_pairs)`.
         """
+        # 0. Harmonize Coeng DA (្ដ) / Coeng TA (្ត) visual twins to their canonical RAC form.
+        #    If no explicit RAC canonical form was registered for a skeleton, prefer any attested ្ដ form.
+        for surf in list(self.stats.lexicon_words.keys()) + list(self.stats.untyped_words.keys()):
+            if "\u17d2\u178a" in surf:
+                skel = coeng_skeleton(surf)
+                if skel not in self.stats.canonical_forms:
+                    self.stats.canonical_forms[skel] = surf
+
+        for surf in list(self.stats.untyped_words.keys()):
+            canon = self.get_canonical_form(surf)
+            if canon != surf:
+                self.stats.untyped_words[canon] += self.stats.untyped_words.pop(surf)
+
+        for surf in list(self.stats.lexicon_words.keys()):
+            canon = self.get_canonical_form(surf)
+            if canon != surf:
+                tags = self.stats.lexicon_words.pop(surf)
+                self.stats.lexicon_words[canon].update(tags)
+                for tag in tags:
+                    cnt = self.stats.word_pos_counts.pop((surf, tag), 0)
+                    if cnt > 0:
+                        self.stats.word_pos_counts[(canon, tag)] += cnt
+                if surf in self.stats.reading_forms:
+                    rd = self.stats.reading_forms.pop(surf)
+                    if canon not in self.stats.reading_forms:
+                        self.stats.reading_forms[canon] = self.get_canonical_form(rd)
+
         # 1. Merge untyped words (from frequency lists like khmerlbdict) into existing POS tags
         # without adding raw unsegmented wordlist counts into total_corpus_tokens (which would
         # dilute sentence-corpus NLL probabilities).
@@ -206,7 +254,7 @@ class CostEstimator:
         Compute the integer emission cost for `(surface, ud_pos)` in `[-32767, 32767]`.
         Lower cost = higher probability in the Viterbi lattice.
         """
-        norm = normalize_khmer(surface)
+        norm = self.get_canonical_form(surface)
         count = self.stats.word_pos_counts.get((norm, ud_pos), 0)
         vocab_size = max(len(self.stats.lexicon_words), 1000)
         total = max(self.stats.total_corpus_tokens, 1000)

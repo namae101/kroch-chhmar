@@ -155,3 +155,51 @@ def test_structured_token_merging() -> None:
     assert "កូវីដ-១៩" in tag_tokens
     assert "#Khmer2026" in tag_tokens
     assert "@moh_kh" in tag_tokens
+
+
+def test_coeng_da_ta_visual_twins_and_rac_normalization(tmp_path: Path) -> None:
+    estimator = CostEstimator()
+    # Register RAC canonical Coeng DA (្ដ) and Coeng TA (្ត) words
+    estimator.add_lexicon_entry("កណ្ដាល", "NOUN", freq=100, is_canonical=True)
+    estimator.add_lexicon_entry("ក្ដៅ", "ADJ", freq=100, is_canonical=True)
+    estimator.add_lexicon_entry("សេចក្ដីសុខ", "NOUN", freq=80, is_canonical=True)
+    estimator.add_lexicon_entry("សេចក្ដី", "NOUN", freq=90, is_canonical=True)
+    estimator.add_lexicon_entry("សុខ", "NOUN", freq=90, is_canonical=True)
+    estimator.add_lexicon_entry("សន្តិភាព", "NOUN", freq=100, is_canonical=True)
+
+    splitter = CompoundSplitter(base_vocab={"សេចក្ដី", "សុខ"})
+    entries = generate_sudachi_entries(estimator, splitter, is_user_dict=True)
+
+    user_csv = write_sudachi_csv(entries, tmp_path / "coeng_user.csv")
+    sys_dic = REPO_ROOT / "data" / "build" / "system_khmer.dic"
+    user_dic = build_user_dic(user_csv, sys_dic, tmp_path / "coeng_user.dic")
+
+    tokenizer = KhmerTokenizer(user_dic_paths=[user_dic])
+
+    # 1. Both ក្ដៅ (RAC Coeng DA) and ក្តៅ (common typo Coeng TA) match as single tokens
+    #    and both resolve to canonical RAC normalized_form "ក្ដៅ"
+    m_da = tokenizer.tokenize("ក្ដៅ", mode=SplitMode.C)
+    m_ta = tokenizer.tokenize("ក្តៅ", mode=SplitMode.C)
+    assert len(m_da) == 1 and not m_da[0].is_oov
+    assert len(m_ta) == 1 and not m_ta[0].is_oov
+    assert m_da[0].surface == "ក្ដៅ"
+    assert m_ta[0].surface == "ក្តៅ"
+    assert m_da[0].normalized_form == "ក្ដៅ"
+    assert m_ta[0].normalized_form == "ក្ដៅ"
+
+    # 2. Phonotactic ណ្ត -> ណ្ដ and ន្ដ -> ន្ត
+    m_kandal = tokenizer.tokenize("កណ្តាល", mode=SplitMode.C)
+    assert len(m_kandal) == 1 and m_kandal[0].normalized_form == "កណ្ដាល"
+
+    m_santepheap = tokenizer.tokenize("សន្ដិភាព", mode=SplitMode.C)
+    assert len(m_santepheap) == 1 and m_santepheap[0].normalized_form == "សន្តិភាព"
+
+    # 3. Compound visual twin in Mode C and Mode A
+    m_comp_c = tokenizer.tokenize("សេចក្តីសុខ", mode=SplitMode.C)
+    assert len(m_comp_c) == 1
+    assert m_comp_c[0].surface == "សេចក្តីសុខ"
+    assert m_comp_c[0].normalized_form == "សេចក្ដីសុខ"
+
+    m_comp_a = tokenizer.tokenize("សេចក្តីសុខ", mode=SplitMode.A)
+    assert [m.surface for m in m_comp_a] == ["សេចក្តី", "សុខ"]
+    assert [m.normalized_form for m in m_comp_a] == ["សេចក្ដី", "សុខ"]

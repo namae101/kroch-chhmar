@@ -333,15 +333,31 @@ def _coeng_ro(r: list[int]) -> list[int]:
 
 
 def _coeng_da(r: list[int]) -> list[int]:
+    """
+    Context-aware Khmer phonotactic canonicalization for Coeng DA (្ដ) vs Coeng TA (្ត):
+      - Retroflex nasal ណ (0x178E) + Coeng TA (0x17D2 0x178F) -> ណ + Coeng DA (0x17D2 0x178A)
+      - Dental nasal ន (0x1793) + Coeng DA (0x17D2 0x178A) -> ន + Coeng TA (0x17D2 0x178F)
+    Other base consonants (ក, ផ, ម, ស, ប, etc.) preserve their etymological Coeng DA/TA
+    so RAC 2022 standard spellings (e.g. ក្ដៅ, ផ្ដើម, ម្ដេច, សេចក្ដី) remain intact.
+    """
     n = len(r)
+    if n < 3:
+        return r
+    base = r[0]
     out = []
     i = 0
     while i < n:
-        if i + 1 < n and r[i] == _COENG and r[i + 1] == 0x178A:
-            out.append(_COENG)
-            out.append(0x178F)
-            i += 2
-            continue
+        if i + 1 < n and r[i] == _COENG:
+            if base == 0x178E and r[i + 1] == 0x178F:
+                out.append(_COENG)
+                out.append(0x178A)
+                i += 2
+                continue
+            if base == 0x1793 and r[i + 1] == 0x178A:
+                out.append(_COENG)
+                out.append(0x178F)
+                i += 2
+                continue
         out.append(r[i])
         i += 1
     return out
@@ -499,6 +515,45 @@ def normalize_khmer(
         text = text.replace("\u200c", "").replace("\u200d", "")
 
     return betterkhmer_normalize(text)
+
+
+def fix_coeng_da_ta_phonotactics(text: str) -> str:
+    """
+    Apply context-aware Khmer phonotactic rules:
+      - ណ + ្ត (retroflex + dental Coeng TA) -> ណ + ្ដ (retroflex + Coeng DA)
+      - ន + ្ដ (dental + retroflex Coeng DA) -> ន + ្ត (dental + Coeng TA)
+    """
+    text = text.replace("\u178e\u17d2\u178f", "\u178e\u17d2\u178a")
+    text = text.replace("\u1793\u17d2\u178a", "\u1793\u17d2\u178f")
+    return text
+
+
+def coeng_skeleton(text: str) -> str:
+    """
+    Return a canonical lookup key that treats Coeng DA (្ដ) and Coeng TA (្ត) as equivalent.
+    Used to link visual twin variants (e.g. ក្តៅ <-> ក្ដៅ) to their authoritative RAC headword.
+    """
+    return text.replace("\u17d2\u178a", "\u17d2\u178f")
+
+
+def generate_coeng_twins(surface: str) -> list[str]:
+    """
+    Return visual twin surface variants of `surface` where Coeng DA (`\\u17d2\\u178a`)
+    and Coeng TA (`\\u17d2\\u178f`) are interchanged (excluding `surface` itself).
+    """
+    if "\u17d2\u178a" not in surface and "\u17d2\u178f" not in surface:
+        return []
+    candidates = [
+        surface.replace("\u17d2\u178a", "\u17d2\u178f"),
+        surface.replace("\u17d2\u178f", "\u17d2\u178a"),
+        fix_coeng_da_ta_phonotactics(surface.replace("\u17d2\u178a", "\u17d2\u178f")),
+        fix_coeng_da_ta_phonotactics(surface.replace("\u17d2\u178f", "\u17d2\u178a")),
+    ]
+    twins: list[str] = []
+    for cand in candidates:
+        if cand != surface and cand not in twins:
+            twins.append(cand)
+    return twins
 
 
 # ---------------------------------------------------------------------------

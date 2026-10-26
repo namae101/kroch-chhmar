@@ -137,7 +137,7 @@ Sudachi binary dictionaries require forward/backward references in columns 15 (`
 
 ## 3. Add-On Methods Supporting the Core Algorithm
 
-Khmer script presents several challenges that standard CJK/Latin tokenizers (`Sudachi`, `MeCab`) cannot handle out of the box: stacked consonants (`Coeng \u17d2`), visually identical Unicode encoding permutations, invisible zero-width spaces, corpus annotation markers, and mixed-script OOV punctuation. The following **6 add-on methods** work alongside the Viterbi algorithm:
+Khmer script presents several challenges that standard CJK/Latin tokenizers (`Sudachi`, `MeCab`) cannot handle out of the box: stacked consonants (`Coeng \u17d2`), visually identical Unicode encoding permutations, invisible zero-width spaces, corpus annotation markers, and mixed-script OOV punctuation. The following **7 add-on methods** work alongside the Viterbi algorithm:
 
 ### Add-On 1: `BetterKhmer` Finite-State Syllable Canonicalizer (`betterkhmer_normalize`)
 - **Location**: `src/kroch_chhmar/normalizer.py`
@@ -148,7 +148,7 @@ Khmer script presents several challenges that standard CJK/Latin tokenizers (`Su
   3. Stable-sorts each syllable cluster by category priority and applies contextual rewrite rules:
      - Merges split compound vowels (`េ` + `ា` $\to$ `ោ`, `េ` + `ី` $\to$ `ើ`, `ើ` + `ា` $\to$ `ោី`).
      - Rewrites ambiguous `\u17bb` (*-u*) to register shifters `\u17ca` (`៊`) or `\u17c9` (`៉`) based on Series-1 (`_strong_ends`) vs. Series-2 (`_nstrong_ends`) consonant context when followed by an upper vowel/sign (`_va_samyok_at`).
-     - Places `Coeng Ro` (`្` + `រ`) after any other subscript consonant (`_coeng_ro`) and normalizes `Coeng Da` (`្` + `ដ` $\to$ `្` + `ត` via `_coeng_da`).
+     - Places `Coeng Ro` (`្` + `រ`) after any other subscript consonant (`_coeng_ro`) and applies context-aware phonotactic rules for `Coeng Da` / `Coeng Ta` (`ណ្ត` $\to$ `ណ្ដ`, `ន្ដ` $\to$ `ន្ត`) while preserving etymological `្ដ`/`្ត` on other base consonants (`ក្ដៅ`, `ផ្ដើម`, `សេចក្ដី`).
 
 ### Add-On 2: Khmer Character Cluster (KCC) Engine & Two-Layer Boundary Safeguard
 - **Location**: `configs/char.def` + `src/kroch_chhmar/normalizer.py` (`iter_kccs`) + `src/kroch_chhmar/tokenizer.py` (`enforce_kcc_boundaries`)
@@ -201,6 +201,14 @@ Khmer script presents several challenges that standard CJK/Latin tokenizers (`Su
   - Punctuation symbols (`។`, `៕`, `៖`, `«`, `»`) $\to$ `PUNCT`
   - Khmer/ASCII digits (`០-៩`, `0-9`) $\to$ `NUM`
   - Productive nominal prefixes (`ការ-`, `ភាព-`, `សេចក្ដី-`, `អ្នក-`) $\to$ `NOUN`
+
+### Add-On 7: Coeng DA (`្ដ`) / Coeng TA (`្ត`) Orthographic Harmonizer & Visual Twin Trie Aliases
+- **Location**: `src/kroch_chhmar/normalizer.py`, `src/kroch_chhmar/dictionary/cost_estimator.py`, `src/kroch_chhmar/dictionary/csv_writer.py`
+- **Problem**: In Khmer fonts, the subscript glyphs of **`ដ`** (`្ដ`, `\u17d2\u178a`) and **`ត`** (`្ត`, `\u17d2\u178f`) render identically, causing typists and corpora to interchange them (`NICT ALT NOVA` collapsed all `្ដ` $\to$ `្ត`, whereas `RAC 2022` strictly distinguishes `14,483` `្ដ` vs `17,810` `្ត`).
+- **Method**:
+  1. **Context-Aware Phonotactics (`_coeng_da`)**: Normalizes illegal consonant-class clusters (`ណ្ត` $\to$ `ណ្ដ` for retroflex `ណ`, e.g., `កណ្ដាល`; and `ន្ដ` $\to$ `ន្ត` for dental `ន`, e.g., `សន្តិភាព`) while preserving etymological `្ដ`/`្ត` on other base consonants.
+  2. **RAC 2022 Canonical Pooling (`finalize_deduplication`)**: Pools corpus frequencies across visual twins onto the authoritative `RAC 2022` headword (`ក្ដៅ`, `ផ្ដើម`, `ម្ដេច`, `សេចក្ដី`, `ស្ដាប់`).
+  3. **Visual Twin Trie Aliases (`generate_sudachi_entries`)**: Emits both the canonical `RAC 2022` surface and its visual twin alias in `lex.csv` across Mode A, Mode B, and Mode C passes, with Column 13 (`normalized_form`) pointing to the official `RAC 2022` headword.
 
 ---
 

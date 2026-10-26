@@ -122,6 +122,7 @@ def ingest_rac_dictionary_csv(
                 pos=ud_pos,
                 freq=0,
                 reading=reading,
+                is_canonical=True,
             )
             count += 1
 

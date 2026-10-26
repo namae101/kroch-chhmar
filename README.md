@@ -14,7 +14,7 @@ Full architectural details are documented in [`plan/implementation_plan.md`](pla
 
 ## Features
 
-- **Khmer Unicode Canonicalization (`betterkhmer`)**: Regex-free syllable sorting, compound vowel merging (`េ` + `ា` $\to$ `ោ`), consonant shifter resolution, and zero-width character (`\u200b`, `\u200c`, `\u200d`) handling.
+- **Khmer Unicode Canonicalization (`betterkhmer`) & Coeng DA/TA Harmonization**: Regex-free syllable sorting, compound vowel merging (`េ` + `ា` $\to$ `ោ`), consonant shifter resolution, context-aware phonotactic rules (`ណ្ត` $\to$ `ណ្ដ`, `ន្ដ` $\to$ `ន្ត`), and dual-entry visual twin aliases (`ក្ដៅ` / `ក្តៅ`, `សេចក្ដី` / `សេចក្តី`) resolving to authoritative Royal Academy of Cambodia (RAC 2022) `normalized_form` spellings.
 - **Khmer Character Cluster (KCC) Boundary Enforcement**:
   - `configs/char.def` uses `NOOOVBOW` / `NOOOVEOW` flags on Khmer dependent vowels, signs, and `Coeng` (`\u17d2`) so OOV candidates do not start or end mid-cluster.
   - Post-tokenization KCC repair in `KhmerTokenizer` guarantees zero mid-KCC splits even on unseen OOV text.
@@ -94,9 +94,9 @@ uv run kroch-chhmar evaluate -f data/raw/khpos_open_test.pos --mode A --split-co
 
 | Dictionary Configuration | `OPEN-TEST` F1 *(Compounds Joined)* | `OPEN-TEST` F1 *(Base Words Split)* | `CLOSE-TEST` F1 *(Compounds Joined)* | `CLOSE-TEST` F1 *(Base Words Split)* | KCC Violations | Speed (1k sents) |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **`khPOS`-Aligned Dict (`Mode C` / `Mode A`)** | **98.35%** *(Mode C)* | **94.89%** *(Mode A)* | **98.24%** *(Mode C)* | **94.62%** *(Mode A)* | **0.00%** | **0.28s** |
-| **Full 4-Dataset 100k Dict (Vocab Extended)** | **84.79%** *(Mode C)* | **86.26%** *(Mode A)* | **84.44%** *(Mode C)* | **86.77%** *(Mode A)* | **0.00%** | **0.28s** |
-| **Full 4-Dataset 100k Dict (Held-Out Test)** | **84.03%** *(Mode C)* | **85.90%** *(Mode A)* | **84.44%** *(Mode C)* | **86.68%** *(Mode A)* | **0.00%** | **0.28s** |
+| **`khPOS`-Aligned Dict (`Mode C` / `Mode A`)** | **98.35%** *(Mode C)* | **94.89%** *(Mode A)* | **98.24%** *(Mode C)* | **94.62%** *(Mode A)* | **0.00%** | **0.18s** |
+| **Calibrated 4-Dataset Dict (Held-Out Test)** | **94.85%** *(Mode C)* | **92.04%** *(Mode A)* | **96.25%** *(Mode C)* | **92.41%** *(Mode A)* | **0.00%** | **0.18s** |
+| **Full 14k `khPOS` Benchmark** | **95.83%** *(Mode C)* | **92.04%** *(Mode A)* | — | — | **0.00%** | **0.15s** |
 
 ### 5. Python API Usage
 

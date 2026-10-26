@@ -16,7 +16,7 @@ from kroch_chhmar.dictionary.pos_mapper import (
     pos_to_id,
     pos_to_sudachi_tuple,
 )
-from kroch_chhmar.normalizer import normalize_khmer
+from kroch_chhmar.normalizer import coeng_skeleton, generate_coeng_twins, normalize_khmer
 
 
 @dataclass
@@ -81,7 +81,23 @@ def generate_sudachi_entries(
       - Pass 3: Collect Mode C words referencing Mode A IDs in `split_info_a` and Mode A/B IDs in `split_info_b`.
     """
     id_prefix = "U" if is_user_dict else ""
+
+    # Pre-register any attested Coeng DA (្ដ) forms before harmonizing compounds
+    for surf in list(estimator.stats.lexicon_words.keys()) + list(estimator.stats.untyped_words.keys()):
+        if "\u17d2\u178a" in surf:
+            skel = coeng_skeleton(surf)
+            if skel not in estimator.stats.canonical_forms:
+                estimator.stats.canonical_forms[skel] = surf
+
+    # Register canonical compound forms derived from canonicalized sub-units in splitter.overrides
+    for _surf, res in list(splitter.overrides.items()):
+        if res.split_a:
+            c_joined = "".join(estimator.get_canonical_form(u) for u in res.split_a)
+            if "\u17d2\u178a" in c_joined or "\u17d2\u178f" in c_joined:
+                estimator.register_canonical_surface(c_joined)
+
     estimator.finalize_deduplication()
+    splitter.canonicalize_vocab(estimator.get_canonical_form)
 
     # Gather all candidate (surface, ud_pos) pairs
     raw_candidates: dict[tuple[str, str], None] = {}
@@ -163,6 +179,9 @@ def generate_sudachi_entries(
 
     entries: list[SudachiCSVEntry] = []
     surface_to_word_id: dict[str, str] = {}
+    seen_surface_pos: set[tuple[str, str]] = (
+        set(mode_a_items) | set(mode_b_items) | set(mode_c_items)
+    )
 
     def _make_base_entry(
         surf: str,
@@ -170,11 +189,13 @@ def generate_sudachi_entries(
         split_type: str = "A",
         split_info_a: str = "*",
         split_info_b: str = "*",
+        normalized_form: str | None = None,
     ) -> SudachiCSVEntry:
+        norm_target = normalized_form or estimator.get_canonical_form(surf)
         pid = pos_to_id(ud_pos)
-        cost = estimator.estimate_word_cost(surf, ud_pos)
+        cost = estimator.estimate_word_cost(norm_target, ud_pos)
         pos_tuple = pos_to_sudachi_tuple(ud_pos)
-        reading = estimator.stats.reading_forms.get(surf, surf)
+        reading = estimator.stats.reading_forms.get(norm_target, norm_target)
         return SudachiCSVEntry(
             surface=surf,
             left_id=pid,
@@ -188,21 +209,42 @@ def generate_sudachi_entries(
             pos5=pos_tuple[4],
             pos6=pos_tuple[5],
             reading_form=reading,
-            normalized_form=surf,
+            normalized_form=norm_target,
             dict_form_id="*",
             split_type=split_type,
             split_info_a=split_info_a,
             split_info_b=split_info_b,
         )
 
-    # Pass 1: Mode A entries
+    def _resolve_twin_unit_ids(twin_surf: str, canonical_units: list[str]) -> list[str | None]:
+        ids: list[str | None] = []
+        offset = 0
+        for u in canonical_units:
+            u_len = len(u)
+            twin_u = twin_surf[offset : offset + u_len]
+            offset += u_len
+            uid = surface_to_word_id.get(twin_u) or surface_to_word_id.get(u)
+            ids.append(uid)
+        return ids
+
+    # Pass 1: Mode A entries (plus Coeng DA/TA visual twin aliases pointing to canonical normalized_form)
     for surf, ud_pos in mode_a_items:
         word_idx = len(entries)
-        entries.append(_make_base_entry(surf, ud_pos, split_type="A"))
+        entries.append(_make_base_entry(surf, ud_pos, split_type="A", normalized_form=surf))
         if surf not in surface_to_word_id and not surf.isdigit():
             surface_to_word_id[surf] = f"{id_prefix}{word_idx}"
 
-    # Pass 2: Mode B entries
+        for twin in generate_coeng_twins(surf):
+            if (twin, ud_pos) not in seen_surface_pos:
+                seen_surface_pos.add((twin, ud_pos))
+                twin_idx = len(entries)
+                entries.append(
+                    _make_base_entry(twin, ud_pos, split_type="A", normalized_form=surf)
+                )
+                if twin not in surface_to_word_id and not twin.isdigit():
+                    surface_to_word_id[twin] = f"{id_prefix}{twin_idx}"
+
+    # Pass 2: Mode B entries (plus Coeng DA/TA visual twin aliases)
     for surf, ud_pos in mode_b_items:
         res = resolutions[surf]
         a_ids = [surface_to_word_id.get(u) for u in res.split_a]
@@ -216,18 +258,42 @@ def generate_sudachi_entries(
                     split_type="B",
                     split_info_a=info_a,
                     split_info_b="*",
+                    normalized_form=surf,
                 )
             )
             if surf not in surface_to_word_id and not surf.isdigit():
                 surface_to_word_id[surf] = f"{id_prefix}{word_idx}"
+
+            for twin in generate_coeng_twins(surf):
+                if (twin, ud_pos) not in seen_surface_pos:
+                    seen_surface_pos.add((twin, ud_pos))
+                    twin_a_ids = _resolve_twin_unit_ids(twin, res.split_a)
+                    twin_info_a = (
+                        "/".join(str(x) for x in twin_a_ids)
+                        if all(twin_a_ids) and len(twin_a_ids) >= 2
+                        else info_a
+                    )
+                    twin_idx = len(entries)
+                    entries.append(
+                        _make_base_entry(
+                            twin,
+                            ud_pos,
+                            split_type="B",
+                            split_info_a=twin_info_a,
+                            split_info_b="*",
+                            normalized_form=surf,
+                        )
+                    )
+                    if twin not in surface_to_word_id and not twin.isdigit():
+                        surface_to_word_id[twin] = f"{id_prefix}{twin_idx}"
         else:
             # Fallback to Mode A if any constituent ID could not be resolved
             word_idx = len(entries)
-            entries.append(_make_base_entry(surf, ud_pos, split_type="A"))
+            entries.append(_make_base_entry(surf, ud_pos, split_type="A", normalized_form=surf))
             if surf not in surface_to_word_id and not surf.isdigit():
                 surface_to_word_id[surf] = f"{id_prefix}{word_idx}"
 
-    # Pass 3: Mode C entries
+    # Pass 3: Mode C entries (plus Coeng DA/TA visual twin aliases)
     for surf, ud_pos in mode_c_items:
         res = resolutions[surf]
         a_ids = [surface_to_word_id.get(u) for u in res.split_a]
@@ -249,13 +315,43 @@ def generate_sudachi_entries(
                     split_type="C",
                     split_info_a=info_a,
                     split_info_b=info_b,
+                    normalized_form=surf,
                 )
             )
             if surf not in surface_to_word_id and not surf.isdigit():
                 surface_to_word_id[surf] = f"{id_prefix}{word_idx}"
+
+            for twin in generate_coeng_twins(surf):
+                if (twin, ud_pos) not in seen_surface_pos:
+                    seen_surface_pos.add((twin, ud_pos))
+                    twin_a_ids = _resolve_twin_unit_ids(twin, res.split_a)
+                    twin_b_ids = _resolve_twin_unit_ids(twin, b_units)
+                    twin_info_a = (
+                        "/".join(str(x) for x in twin_a_ids)
+                        if all(twin_a_ids) and len(twin_a_ids) >= 2
+                        else info_a
+                    )
+                    twin_info_b = (
+                        "/".join(str(x) for x in twin_b_ids)
+                        if all(twin_b_ids) and len(twin_b_ids) >= 2
+                        else twin_info_a
+                    )
+                    twin_idx = len(entries)
+                    entries.append(
+                        _make_base_entry(
+                            twin,
+                            ud_pos,
+                            split_type="C",
+                            split_info_a=twin_info_a,
+                            split_info_b=twin_info_b,
+                            normalized_form=surf,
+                        )
+                    )
+                    if twin not in surface_to_word_id and not twin.isdigit():
+                        surface_to_word_id[twin] = f"{id_prefix}{twin_idx}"
         else:
             word_idx = len(entries)
-            entries.append(_make_base_entry(surf, ud_pos, split_type="A"))
+            entries.append(_make_base_entry(surf, ud_pos, split_type="A", normalized_form=surf))
             if surf not in surface_to_word_id and not surf.isdigit():
                 surface_to_word_id[surf] = f"{id_prefix}{word_idx}"
 

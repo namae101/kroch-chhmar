@@ -1,7 +1,9 @@
 """Tests for Khmer Unicode canonicalization (betterkhmer) and Khmer Character Cluster (KCC) boundaries."""
 
 from kroch_chhmar.normalizer import (
+    coeng_skeleton,
     count_kccs,
+    generate_coeng_twins,
     get_kcc_boundaries,
     is_kcc_boundary,
     is_kcc_dependent_start,
@@ -28,10 +30,19 @@ def test_betterkhmer_coeng_and_syllable_ordering() -> None:
     canonical = "\u1780\u17d2\u179a\u17b6"
     assert normalize_khmer(misordered) == canonical
 
-    # Coeng DA (្ដ) vs Coeng TA (្ត) canonicalization
+    # Context-aware phonotactic Coeng DA (្ដ) vs Coeng TA (្ត) canonicalization:
+    # 1. Retroflex ណ + Coeng TA (ណ្ត) -> ណ + Coeng DA (ណ្ដ)
+    assert normalize_khmer("កណ\u17d2\u178fាល") == "កណ\u17d2\u178aាល"
+    # 2. Dental ន + Coeng DA (ន្ដ) -> ន + Coeng TA (ន្ត)
+    assert normalize_khmer("សន\u17d2\u178aិភាព") == "សន\u17d2\u178fិភាព"
+    # 3. Etymological Coeng DA on other consonants (e.g. សេចក្ដី, ក្ដៅ) is preserved in RAC form,
+    #    while sharing the same coeng_skeleton and generating visual twin aliases
     coeng_da = "សេចក\u17d2\u178aី"
     coeng_ta = "សេចក\u17d2\u178fី"
-    assert normalize_khmer(coeng_da) == normalize_khmer(coeng_ta)
+    assert normalize_khmer(coeng_da) == coeng_da
+    assert normalize_khmer(coeng_ta) == coeng_ta
+    assert coeng_skeleton(coeng_da) == coeng_skeleton(coeng_ta)
+    assert coeng_ta in generate_coeng_twins(coeng_da)
 
 
 def test_zero_width_space_cleanup() -> None:

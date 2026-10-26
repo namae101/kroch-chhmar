@@ -139,6 +139,29 @@ uv run --with pytest pytest -v
 
 ---
 
+## Limitations & Known Considerations
+
+While `kroch-chhmar` achieves 95–98% F1 segmentation accuracy and 0.00% KCC boundary violations on standard Khmer benchmarks, users should keep in mind the following linguistic and operational considerations:
+
+1. **Modern Standard Khmer Focus**:
+   - The dictionary and phonotactic rules are calibrated for **contemporary Standard Khmer** (aligned with the Royal Academy of Cambodia 2022 dictionary and Samdech Chuon Nath).
+   - Old Khmer epigraphy (pre-Angkorian / Angkorian inscriptions) and regional minority languages written in Khmer script (e.g. Bunong, Tampuan, Kuy, Jarai) use distinct phonology/spelling rules and are not covered by the default system dictionary.
+
+2. **Inherent Vowel & Syllable-Coda Boundary Ambiguity on Unseen Words**:
+   - In unspaced Khmer script, unvocalized consonants carry inherent vowels (`/ɑː/` or `/ɔː/`). Whether an unvocalized consonant serves as a syllable coda (final stop) or the onset of the next word is resolved statistically by the Viterbi lattice.
+   - For novel compounds or rare technical jargon not present in the dictionary, boundary placement may occasionally vary. Supplying domain terms via a [custom user dictionary](user_dic.md) resolves these domain-specific ambiguities.
+
+3. **Informal Social Media Slang & Heavy Creative Typographical Variations**:
+   - Highly colloquial online text with intentional phonetic respellings, letter stretching (e.g. `ស្រលាញ់ញញញ`), or non-standard abbreviations will be grouped into OOV Khmer Character Clusters (`KCCs`) unless normalized or added to a domain dictionary.
+
+4. **Word Segmentation vs. Sentence Boundary Detection**:
+   - `kroch-chhmar` is a **word- and morpheme-level tokenizer**, not a sentence boundary disambiguator. It isolates full-stop punctuation (`។`, `៕`, `?`, `!`), but segmenting long unpunctuated Khmer paragraphs into semantic sentences requires downstream sentence-splitting logic.
+
+5. **Upstream Data Licensing for the Pre-Compiled Dictionary**:
+   - The `kroch-chhmar` Python code is 100% **MIT licensed**. However, the bundled pre-compiled `system_khmer.dic` incorporates public corpora from `khPOS` and `NICT ALT NOVA` (CC BY-NC-SA 4.0) and `RAC 2022` (Research/Non-Commercial). Commercial users with strict licensing policies should compile a dictionary using permissively licensed data (`khmerlbdict` + proprietary corpora) via `kroch-chhmar build`.
+
+---
+
 ## License
 
 The source code of `kroch-chhmar` is licensed under the **[MIT License](LICENSE)**.

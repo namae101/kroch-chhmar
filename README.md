@@ -113,7 +113,25 @@ print(tokenizer.segment("ព្រះរាជាណាចក្រកម្ព�
 # -> ['ព្រះ', 'រាជាណាចក្រ', 'កម្ពុជា', 'មាន', 'ការ', 'សិក្សា', '។']
 ```
 
-### 6. Run Tests
+### 6. Run the FastAPI Example Server & Web Playground
+
+An example FastAPI microservice with an interactive browser playground is included in [`example/`](example/README.md):
+
+```bash
+uv run --with fastapi --with uvicorn uvicorn example.app:app --reload --port 8000
+```
+
+- **Interactive Web Playground**: [http://127.0.0.1:8000/](http://127.0.0.1:8000/)
+- **Swagger OpenAPI Docs**: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+
+```bash
+# Example API request
+curl -X POST http://127.0.0.1:8000/tokenize \
+  -H "Content-Type: application/json" \
+  -d '{"text": "កណ្តាលសន្ដិភាពក្តៅផ្តើមសេចក្តី", "mode": "C"}'
+```
+
+### 7. Run Tests
 
 ```bash
 uv run --with pytest pytest -v

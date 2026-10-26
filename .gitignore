@@ -41,6 +41,7 @@ data/interim/*
 data/build/*
 !data/build/.gitkeep
 *.dic
+!src/kroch_chhmar/resources/*.dic
 
 # OS & Editor files
 .DS_Store

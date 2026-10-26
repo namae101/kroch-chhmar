@@ -1,0 +1,100 @@
+# Curated Khmer Compound & Derivation Rules for Multi-Granular Segmentation (Modes A, B, C)
+#
+# Mode A: Indivisible base/root words (split_type: A)
+# Mode B: Derived words or medium 2-part compounds (split_type: B, splits into Mode A)
+# Mode C: Multi-word expressions, long compounds, and named entities (split_type: C, splits into Mode A & B)
+
+# Common derivational prefixes that form Mode B words when attached to a valid Mode A base word
+prefixes:
+  - surface: "ការ"
+    pos: "NOUN"
+    description: "Nominalizer prefix (action/process)"
+  - surface: "ភាព"
+    pos: "NOUN"
+    description: "Nominalizer prefix (state/quality)"
+  - surface: "សេចក្តី"
+    pos: "NOUN"
+    description: "Abstract noun prefix"
+  - surface: "សេចក្ដី"
+    pos: "NOUN"
+    description: "Abstract noun prefix (canonical coeng ta)"
+  - surface: "អ្នក"
+    pos: "NOUN"
+    description: "Agentive prefix (person who does/is)"
+
+# Explicit curated compound overrides
+# Format:
+#   surface:
+#     pos: UD POS tag
+#     mode: B or C
+#     split_a: [list of Mode A constituent surfaces]
+#     split_b: [list of Mode B constituent surfaces] (optional, for Mode C words)
+overrides:
+  "ការសិក្សា":
+    pos: "NOUN"
+    mode: "B"
+    split_a: ["ការ", "សិក្សា"]
+  "ការអភិវឌ្ឍ":
+    pos: "NOUN"
+    mode: "B"
+    split_a: ["ការ", "អភិវឌ្ឍ"]
+  "ការងារ":
+    pos: "NOUN"
+    mode: "A"
+    split_a: []
+  "ភាពជោគជ័យ":
+    pos: "NOUN"
+    mode: "B"
+    split_a: ["ភាព", "ជោគជ័យ"]
+  "អ្នកគ្រូ":
+    pos: "NOUN"
+    mode: "B"
+    split_a: ["អ្នក", "គ្រូ"]
+  "អ្នកស្រុក":
+    pos: "NOUN"
+    mode: "B"
+    split_a: ["អ្នក", "ស្រុក"]
+  "សាលារៀន":
+    pos: "NOUN"
+    mode: "B"
+    split_a: ["សាលា", "រៀន"]
+  "មន្ទីរពេទ្យ":
+    pos: "NOUN"
+    mode: "B"
+    split_a: ["មន្ទីរ", "ពេទ្យ"]
+  "ព្រះរាជាណាចក្រកម្ពុជា":
+    pos: "PROPN"
+    mode: "C"
+    split_a: ["ព្រះ", "រាជាណាចក្រ", "កម្ពុជា"]
+    split_b: ["ព្រះរាជាណាចក្រ", "កម្ពុជា"]
+  "ព្រះរាជាណាចក្រ":
+    pos: "NOUN"
+    mode: "B"
+    split_a: ["ព្រះ", "រាជាណាចក្រ"]
+  "ក្រសួងអប់រំយុវជននិងកីឡា":
+    pos: "PROPN"
+    mode: "C"
+    split_a: ["ក្រសួង", "អប់រំ", "យុវជន", "និង", "កីឡា"]
+    split_b: ["ក្រសួងអប់រំ", "យុវជន", "និង", "កីឡា"]
+  "ក្រសួងអប់រំ":
+    pos: "PROPN"
+    mode: "B"
+    split_a: ["ក្រសួង", "អប់រំ"]
+  "បញ្ញាសិប្បនិម្មិត":
+    pos: "NOUN"
+    mode: "C"
+    split_a: ["បញ្ញា", "សិប្បនិម្មិត"]
+    split_b: ["បញ្ញា", "សិប្បនិម្មិត"]
+  "ភាសាខ្មែរ":
+    pos: "NOUN"
+    mode: "B"
+    split_a: ["ភាសា", "ខ្មែរ"]
+  "ប្រទេសកម្ពុជា":
+    pos: "PROPN"
+    mode: "B"
+    split_a: ["ប្រទេស", "កម្ពុជា"]
+  "រាជធានីភ្នំពេញ":
+    pos: "PROPN"
+    mode: "C"
+    split_a: ["រាជធានី", "ភ្នំពេញ"]
+    split_b: ["រាជធានី", "ភ្នំពេញ"]

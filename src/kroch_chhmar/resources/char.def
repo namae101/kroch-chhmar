@@ -1,0 +1,65 @@
+# Character Category Definition for Kroch-Chhmar
+# Format: CATEGORY_NAME INVOKE GROUP LENGTH
+# Built-in sudachi.rs categories:
+# DEFAULT, SPACE, KANJI, SYMBOL, NUMERIC, ALPHA, HIRAGANA, KATAKANA, KANJINUMERIC, GREEK, CYRILLIC
+# Special boundary flags: ALL, NOOOVBOW, NOOOVEOW
+
+DEFAULT         0 1 0
+SPACE           0 1 0
+KANJI           0 0 2
+SYMBOL          1 0 1
+NUMERIC         1 1 0
+ALPHA           1 1 0
+HIRAGANA        0 1 2
+KATAKANA        1 1 2
+KANJINUMERIC    0 1 0
+GREEK           1 1 0
+CYRILLIC        1 1 0
+
+# Space
+0x0020 SPACE
+0x0009 SPACE
+0x000A SPACE
+0x000D SPACE
+0x00A0 SPACE
+
+# ASCII Digits
+0x0030..0x0039 NUMERIC
+
+# ASCII Alpha
+0x0041..0x005A ALPHA
+0x0061..0x007A ALPHA
+
+# ASCII Symbols
+0x0021..0x002F SYMBOL
+0x003A..0x0040 SYMBOL
+0x005B..0x0060 SYMBOL
+0x007B..0x007E SYMBOL
+
+# Khmer Consonants & Independent Vowels (mapped to KANJI for Khmer script OOV handling)
+0x1780..0x17A2 KANJI
+0x17A3..0x17A4 KANJI
+0x17A5..0x17B3 KANJI
+
+# Khmer Dependent Vowels, Register Shifters, Signs (NOOOVBOW prevents OOV from starting on a dependent char)
+0x17B4..0x17B5 KANJI NOOOVBOW
+0x17B6..0x17C5 KANJI NOOOVBOW
+0x17C6..0x17D1 KANJI NOOOVBOW
+0x17D3         KANJI NOOOVBOW
+0x17DD         KANJI NOOOVBOW
+
+# Khmer Coeng (0x17D2): cannot start an OOV (NOOOVBOW) and cannot end an OOV (NOOOVEOW)
+0x17D2         KANJI NOOOVBOW NOOOVEOW
+
+# Khmer Punctuation and Currency/Signs
+0x17D4..0x17DC SYMBOL
+
+# Khmer Digits and Divination Lore Numbers
+0x17E0..0x17E9 NUMERIC
+0x17F0..0x17F9 NUMERIC
+
+# Khmer Symbols (Lunar dates etc.)
+0x19E0..0x19FF SYMBOL
+
+# Zero Width Non-Joiner / Joiner
+0x200C..0x200D ALL NOOOVBOW NOOOVEOW

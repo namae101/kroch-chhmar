@@ -30,6 +30,14 @@ kroch-chhmar = "kroch_chhmar.cli:app"
 [tool.hatch.build.targets.wheel]
 packages = ["src/kroch_chhmar"]
 
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/kroch_chhmar",
+    "README.md",
+    "LICENSE",
+    "pyproject.toml",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]

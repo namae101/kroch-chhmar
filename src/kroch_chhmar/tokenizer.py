@@ -240,9 +240,23 @@ class KhmerTokenizer:
         self.enforce_kcc = enforce_kcc
         self.merge_structured = merge_structured
 
-        repo_root = Path(__file__).resolve().parents[2]
-        default_cfg = repo_root / "configs" / "sudachi.json"
-        cfg_file = Path(config_path) if config_path else default_cfg
+        pkg_dir = Path(__file__).parent.resolve()
+        bundled_res = pkg_dir / "resources"
+        repo_root = pkg_dir.parents[1] if len(pkg_dir.parents) >= 2 else pkg_dir
+
+        import os
+
+        # 1. Resolve Sudachi JSON config (explicit argument -> env var -> bundled package -> repo configs)
+        if config_path:
+            cfg_file = Path(config_path).resolve()
+        elif os.environ.get("KROCH_CHHMAR_CONFIG"):
+            cfg_file = Path(os.environ["KROCH_CHHMAR_CONFIG"]).resolve()
+        elif (bundled_res / "sudachi.json").exists():
+            cfg_file = bundled_res / "sudachi.json"
+        elif (repo_root / "configs" / "sudachi.json").exists():
+            cfg_file = repo_root / "configs" / "sudachi.json"
+        else:
+            cfg_file = bundled_res / "sudachi.json"
 
         if not cfg_file.exists():
             raise FileNotFoundError(f"Sudachi config file not found: {cfg_file}")
@@ -250,19 +264,33 @@ class KhmerTokenizer:
         cfg_data = json.loads(cfg_file.read_text(encoding="utf-8"))
         cfg_dir = cfg_file.parent.resolve()
 
-        # Resolve relative paths in config to absolute paths so SudachiPy works from any CWD
+        # 2. Resolve system dictionary path (explicit argument -> env var -> config path -> bundled resource -> repo build)
         if system_dic_path:
             sys_dic = Path(system_dic_path).resolve()
+        elif os.environ.get("KROCH_CHHMAR_SYSTEM_DIC"):
+            sys_dic = Path(os.environ["KROCH_CHHMAR_SYSTEM_DIC"]).resolve()
         else:
-            sys_dic = (cfg_dir / cfg_data.get("systemDict", "../data/build/system_khmer.dic")).resolve()
+            cand_cfg = (cfg_dir / cfg_data.get("systemDict", "system_khmer.dic")).resolve()
+            cand_res = (bundled_res / "system_khmer.dic").resolve()
+            cand_dev = (repo_root / "data" / "build" / "system_khmer.dic").resolve()
+            if cand_cfg.exists():
+                sys_dic = cand_cfg
+            elif cand_res.exists():
+                sys_dic = cand_res
+            elif cand_dev.exists():
+                sys_dic = cand_dev
+            else:
+                sys_dic = cand_cfg
 
         if not sys_dic.exists():
             raise FileNotFoundError(
                 f"Compiled system dictionary not found at: {sys_dic}\n"
-                "Please build the system dictionary first by running:\n"
-                "  • Quick seed build : uv run kroch-chhmar build\n"
-                "  • Full 100k build  : uv run kroch-chhmar fetch all && uv run kroch-chhmar prepare && uv run kroch-chhmar build\n"
-                "Or specify an existing `.dic` file via `--system-dic /path/to/system_khmer.dic`."
+                "Please specify a valid compiled dictionary via:\n"
+                "  • Python : KhmerTokenizer(system_dic_path='/path/to/custom_system.dic')\n"
+                "  • CLI    : --system-dic /path/to/custom_system.dic\n"
+                "  • Env var: export KROCH_CHHMAR_SYSTEM_DIC=/path/to/custom_system.dic\n"
+                "Or build a fresh dictionary using:\n"
+                "  • uv run kroch-chhmar build"
             )
 
         cfg_data["systemDict"] = str(sys_dic)

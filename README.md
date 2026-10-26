@@ -8,7 +8,7 @@
 
 A reproducible Python workflow for generating **Sudachi-compatible Khmer binary dictionaries** (`system_khmer.dic` and `user_khmer.dic`) and a **Khmer Character Cluster (KCC)-aware word segmentation plugin/wrapper** for [`SudachiPy`](https://github.com/WorksApplications/sudachi.rs).
 
-Full architectural details are documented in [`plan/implementation_plan.md`](plan/implementation_plan.md), dataset ingestion and cost calibration in [`ingestion_strategy.md`](ingestion_strategy.md), custom user dictionaries in [`user_dic.md`](user_dic.md), and evaluation results in [`evaluation.md`](evaluation.md).
+Full architectural details are documented in [`plan/implementation_plan.md`](plan/implementation_plan.md), dataset ingestion and cost calibration in [`ingestion_strategy.md`](ingestion_strategy.md), custom user dictionaries in [`user_dic.md`](user_dic.md), evaluation results in [`evaluation.md`](evaluation.md), and package publishing in [`publishing.md`](publishing.md).
 
 ---
 

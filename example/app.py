@@ -47,7 +47,7 @@ app = FastAPI(
         "Multi-granular Khmer word segmentation (Modes A/B/C), Universal Dependencies POS tagging, "
         "RAC 2022 orthographic normalization, and Khmer Character Cluster (KCC) analysis powered by SudachiPy."
     ),
-    version="0.1.0",
+    version="0.2.0",
     lifespan=lifespan,
 )
 
@@ -61,6 +61,7 @@ class TokenizeRequest(BaseModel):
     text: str = Field(
         ...,
         min_length=1,
+        max_length=10_000,
         description="Input Khmer text to segment and analyze.",
         examples=["ព្រះរាជាណាចក្រកម្ពុជាមានសន្តិភាពនិងសេចក្តីសុខនៅកណ្តាលទីក្រុង។"],
     )
@@ -98,6 +99,7 @@ class SegmentRequest(BaseModel):
     text: str = Field(
         ...,
         min_length=1,
+        max_length=10_000,
         description="Input Khmer text to segment.",
         examples=["ព្រះរាជាណាចក្រកម្ពុជាមានការសិក្សានិងការអភិវឌ្ឍល្អ។"],
     )
@@ -138,6 +140,7 @@ class NormalizeRequest(BaseModel):
     text: str = Field(
         ...,
         min_length=1,
+        max_length=10_000,
         description="Input Khmer text to canonicalize and segment into Khmer Character Clusters (KCCs).",
         examples=["កណ្តាលសន្ដិភាពក្តៅផ្តើមសេចក្តី"],
     )
@@ -394,45 +397,64 @@ _PLAYGROUND_HTML = """<!DOCTYPE html>
   </div>
 
   <script>
+    function addCell(row, value, color) {
+      const cell = document.createElement('td');
+      cell.textContent = String(value);
+      if (color) cell.style.color = color;
+      row.appendChild(cell);
+    }
+
     async function runTokenize() {
       const text = document.getElementById('inputText').value;
       const mode = document.getElementById('modeSelect').value;
-      const res = await fetch('/tokenize', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, mode })
-      });
-      const data = await res.json();
       const sChips = document.getElementById('surfaceChips');
       const nChips = document.getElementById('normChips');
       const tbody = document.getElementById('morphRows');
-      sChips.innerHTML = '';
-      nChips.innerHTML = '';
-      tbody.innerHTML = '';
+      sChips.replaceChildren();
+      nChips.replaceChildren();
+      tbody.replaceChildren();
 
-      data.morphemes.forEach((m, idx) => {
-        const sc = document.createElement('span');
-        sc.className = 'chip';
-        sc.textContent = m.surface;
-        sChips.appendChild(sc);
+      try {
+        const res = await fetch('/tokenize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text, mode })
+        });
+        if (!res.ok) {
+          const detail = await res.text();
+          sChips.textContent = 'Error: ' + detail;
+          return;
+        }
+        const data = await res.json();
 
-        const nc = document.createElement('span');
-        nc.className = 'chip' + (m.normalized_form !== m.surface ? ' fixed' : '');
-        nc.textContent = m.normalized_form;
-        nChips.appendChild(nc);
+        data.morphemes.forEach((m, idx) => {
+          const sc = document.createElement('span');
+          sc.className = 'chip';
+          sc.textContent = m.surface;
+          sChips.appendChild(sc);
 
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td>${idx + 1}</td>
-          <td>${m.surface}</td>
-          <td style="color:${m.normalized_form !== m.surface ? '#4ade80' : 'inherit'}">${m.normalized_form}</td>
-          <td>${m.reading_form}</td>
-          <td><code>${m.ud_pos}</code></td>
-          <td>${m.begin}:${m.end}</td>
-          <td>${m.is_oov ? 'Yes' : 'No'}</td>
-        `;
-        tbody.appendChild(tr);
-      });
+          const nc = document.createElement('span');
+          nc.className = 'chip' + (m.normalized_form !== m.surface ? ' fixed' : '');
+          nc.textContent = m.normalized_form;
+          nChips.appendChild(nc);
+
+          const tr = document.createElement('tr');
+          addCell(tr, idx + 1);
+          addCell(tr, m.surface);
+          addCell(tr, m.normalized_form, m.normalized_form !== m.surface ? '#4ade80' : null);
+          addCell(tr, m.reading_form);
+          const posCell = document.createElement('td');
+          const code = document.createElement('code');
+          code.textContent = m.ud_pos;
+          posCell.appendChild(code);
+          tr.appendChild(posCell);
+          addCell(tr, m.begin + ':' + m.end);
+          addCell(tr, m.is_oov ? 'Yes' : 'No');
+          tbody.appendChild(tr);
+        });
+      } catch (err) {
+        sChips.textContent = 'Request failed: ' + err;
+      }
     }
     runTokenize();
   </script>

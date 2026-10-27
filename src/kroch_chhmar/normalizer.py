@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import enum
+from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import Iterator
 
 # ---------------------------------------------------------------------------
 # BetterKhmer / SIL Global Khmer Normalizer (MIT License)
@@ -201,7 +201,7 @@ def _can_end_at(r: list[int], target: int, ends) -> bool:
     for s in range(target):
         found = [False]
 
-        def _mark(e: int) -> None:
+        def _mark(e: int, found: list[bool] = found) -> None:
             if e == target:
                 found[0] = True
 
@@ -263,7 +263,7 @@ def _collapse_invis(r: list[int]) -> list[int]:
 
 def _pair_replace(r: list[int], a: int, b: int, *repl: int) -> list[int]:
     n = len(r)
-    out = []
+    out: list[int] = []
     i = 0
     while i < n:
         if i + 1 < n and r[i] == a and r[i + 1] == b:

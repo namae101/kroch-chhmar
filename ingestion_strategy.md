@@ -2,7 +2,7 @@
 
 This document explains:
 1. **How `Sudachi` (`sudachi.rs` / `SudachiPy`) works under the hood** (Double-Array Trie lattice construction, Minimum-Cost Viterbi search, and multi-granular `Mode A / B / C` projection).
-2. **Why vanilla `Sudachi` cannot segment Khmer directly, and the 6 Khmer-specific add-on methods engineered in `kroch-chhmar`** (`BetterKhmer` syllable canonicalization, two-layer Khmer Character Cluster [KCC] boundary enforcement, KCC-constrained Dynamic Programming compound decomposition, 3-pass topological word-ID compilation, structured OOV span merging, and rule-based POS heuristics).
+2. **Why vanilla `Sudachi` cannot segment Khmer directly, and the 7 Khmer-specific add-on methods engineered in `kroch-chhmar`** (`BetterKhmer` syllable canonicalization, two-layer Khmer Character Cluster [KCC] boundary enforcement, KCC-constrained Dynamic Programming compound decomposition, 3-pass topological word-ID compilation, structured OOV span merging, and rule-based POS heuristics).
 3. **How `kroch-chhmar` ingests, aligns, deduplicates, and calibrates heterogeneous Khmer datasets** into a single binary dictionary (`system_khmer.dic`) without cross-dataset probability distortion or compound granularity conflicts.
 
 ---
@@ -224,8 +224,8 @@ For any word $w$ attested $C(w) > 0$ times in the human-segmented sentence corpo
 $$\text{WordCost}(w, \text{POS}) = \text{round}\!\left(-500 \cdot \ln\frac{C(w, \text{POS}) + 0.5}{N + 0.5 V}\right)$$
 
 where:
-- $N = \text{total\_corpus\_tokens} \approx 540,000$ (from the `32,046` deduplicated `khPOS` + `NICT ALT` sentences),
-- $V = \text{vocab\_size} \approx 82,587$.
+- $N = \text{total\_corpus\_tokens} \approx 758,000$ (from the `31,033` deduplicated `khPOS` + `NICT ALT` sentences after holdout filtering),
+- $V = \text{vocab\_size} \approx 82,500$.
 
 > [!IMPORTANT]
 > **Why unsegmented wordlist frequencies (`khmerlbdict`) must not be added to $N$:**
@@ -241,7 +241,7 @@ Under this calibrated scale:
 
 ### 5.2 KCC-Length-Scaled Cost for Unattested Dictionary Words ($C(w) = 0$)
 
-Roughly half of the entries in `system_khmer.dic` come from `RAC 2022 44k` and `khmerlbdict` and never appear in the `32,046` training sentences ($C(w) = 0$).
+Roughly half of the entries in `system_khmer.dic` come from `RAC 2022 44k` and `khmerlbdict` and never appear in the `31,033` training sentences ($C(w) = 0$).
 
 If unattested multi-word entries were given a flat low cost (e.g. $5,200$) or a length discount, an unattested 2-word entry $w_{12}$ ($5,200$) would always undercut two legitimate medium-frequency corpus words $w_1 + w_2$ ($5,000 + 5,000 = 10,000$), causing rampant over-merging.
 
@@ -266,13 +266,36 @@ where $\text{KCCs}(w)$ is the number of Khmer Character Clusters in $w$:
 
 ---
 
-## 6. Impact of Calibration & Add-Ons on Held-Out Benchmark Accuracy
+## 6. Holdout Integrity, Ablation, and Current Accuracy
 
-The table below shows the ablation and calibration impact on the `khPOS` `OPEN-TEST` and `CLOSE-TEST` benchmarks (with both test sets strictly held out from `system_khmer.dic`):
+### 6.1 Holdout integrity
 
-| Configuration | Dictionary Entries | `OPEN-TEST` Mode C (`--join-compounds`) | `OPEN-TEST` Mode B (`--join-compounds`) | `OPEN-TEST` Mode A (`--split-compounds`) | `CLOSE-TEST` Mode C (`--join-compounds`) | `OPEN-TEST` OOV Rate |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Uncalibrated 4-Dataset Build** *(raw `khmerlbdict` counts + unseen length discount + unaligned `ALT` NPs)* | 99,797 | 84.01% | 82.27% | 85.68% | 84.37% | 3.72% |
-| **Calibrated 4-Dataset Build** *(Stages 1–3 + KCC-scaled unseen cost + clean `base_vocab`)* | **81,921** | 94.82% | 91.89% | 92.00% | **96.27%** | 2.81% *(Mode C)* / 2.32% *(Mode A)* |
-| **+ Structured OOV Span Merger (`merge_structured_tokens`)** *(URLs, decimals `២.៦២៥`, times `០៨:៣០`, `គ.ស.`, `...`)* | **81,921** | **94.85%** *(78.6% exact sent)* | **91.93%** | **92.04%** *(67.9% exact sent)* | **96.25%** *(85.6% exact sent)* | **2.65%** *(Mode C)* / **2.19%** *(Mode A)* |
-| **Total Improvement** | — | **+10.84% F1** | **+9.66% F1** | **+6.36% F1** | **+11.88% F1** | **-1.07% OOV** |
+Upstream khPOS `train.all2` (12,000 lines) starts with the entire 1,000-line `CLOSE-TEST` split. v0.2.0 therefore applies an exact-sentence holdout filter before committing token counts, compound overrides, or lexicon sub-parts. The build reports **1,028** skipped sentences (the 1,000 CLOSE-TEST lines plus 11 OPEN-TEST lines and duplicates).
+
+| Experiment | CLOSE-TEST Mode C F1 | OPEN-TEST Mode C F1 |
+| :--- | ---: | ---: |
+| v0.1.0 build (CLOSE-TEST inside training) | 96.25% | 94.85% |
+| Clean build (held-out sentences removed) | **94.86%** | **94.69%** |
+| Size-matched control (1,022 random non-test lines removed) | 95.86% | 94.58% |
+
+The ~1.0-point excess on CLOSE-TEST was leakage, not generalization. The corrected OPEN↔CLOSE gap is 0.20 points in Mode C and 0.28 points in Mode A. `prepare` is also deterministic across `PYTHONHASHSEED` values (`lex.csv` and `matrix.def` byte-identical), and every download is SHA-256 pinned.
+
+### 6.2 v0.1.0 ablation (historical; OPEN-TEST only)
+
+The ablation below is retained to show the effect of calibration and the structured-span merger. Its CLOSE-TEST column is known to be contaminated and is omitted; use §6.3 for the current numbers. OPEN-TEST values remain approximately comparable (±0.2 F1).
+
+| Configuration | Dictionary Entries | `OPEN-TEST` Mode C | `OPEN-TEST` Mode B | `OPEN-TEST` Mode A | OOV Rate |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **Uncalibrated 4-Dataset Build** *(raw `khmerlbdict` counts + unseen length discount + unaligned `ALT` NPs)* | 99,797 | 84.01% | 82.27% | 85.68% | 3.72% |
+| **Calibrated 4-Dataset Build** *(Stages 1–3 + KCC-scaled unseen cost + clean `base_vocab`)* | 81,921 | 94.82% | 91.89% | 92.00% | 2.81% / 2.32% |
+| **+ Structured OOV Span Merger (`merge_structured_tokens`)** | 81,921 | **94.85%** | **91.93%** | **92.04%** | **2.65% / 2.19%** |
+| **Total OPEN improvement** | — | **+10.84% F1** | **+9.66% F1** | **+6.36% F1** | **−1.07% OOV** |
+
+### 6.3 v0.2.0 current results (holdout-corrected)
+
+| Configuration | Entries | `OPEN-TEST` C | `OPEN-TEST` B | `OPEN-TEST` A | `CLOSE-TEST` C | `CLOSE-TEST` A | KCC |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| Current 4-dataset dictionary | **87,119** | **94.66%** | **91.73%** | **91.93%** | **94.86%** | **92.21%** | **0.00%** |
+| Full 14k corpus (mostly in-sample) | 87,119 | **95.52%** | — | **92.08%** | — | — | **0.00%** |
+
+Exact sentence match: OPEN 78.40% (C) / 68.00% (A); CLOSE 83.00% / 70.30%. Boundary F1: OPEN 97.79% / 96.90%; CLOSE 97.90% / 97.03%. Khmer-word OOVs: 11 (OPEN) and 9 (CLOSE). See [`evaluation.md`](evaluation.md) for full tables and the contamination experiment.

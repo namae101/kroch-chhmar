@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import pytest
+from sudachipy.errors import SudachiError
 
 from kroch_chhmar.dictionary.compound_splitter import CompoundSplitter
 from kroch_chhmar.dictionary.cost_estimator import CostEstimator
@@ -19,22 +20,27 @@ from kroch_chhmar.tokenizer import KhmerMorpheme, KhmerTokenizer, SplitMode, enf
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-@pytest.fixture(scope="session", autouse=True)
-def ensure_system_dic() -> Path:
-    """Ensure `data/build/system_khmer.dic` is compiled before running e2e tokenizer tests."""
-    build_dir = REPO_ROOT / "data" / "build"
+@pytest.fixture(scope="session")
+def system_dic(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """
+    Compile a small, isolated seed dictionary for user-dictionary tests.
+
+    The previous fixture wrote into `data/build/system_khmer.dic`, which could
+    clobber a developer's full build and used a different Sudachi signature from
+    the bundled resource dictionary (making every user dictionary incompatible).
+    """
+    build_dir = tmp_path_factory.mktemp("system_dic")
     sys_dic = build_dir / "system_khmer.dic"
-    if not sys_dic.exists():
-        estimator = CostEstimator()
-        load_seed_dataset(estimator)
-        splitter = CompoundSplitter(
-            base_vocab=set(estimator.stats.lexicon_words.keys()),
-            compounds_yaml_path=REPO_ROOT / "configs" / "compounds.yaml",
-        )
-        entries = generate_sudachi_entries(estimator, splitter, is_user_dict=False)
-        csv_path = write_sudachi_csv(entries, build_dir / "lex.csv")
-        matrix_path = estimator.write_matrix_def(build_dir / "matrix.def")
-        build_system_dic(csv_path, matrix_path, sys_dic)
+    estimator = CostEstimator()
+    load_seed_dataset(estimator)
+    splitter = CompoundSplitter(
+        base_vocab=set(estimator.stats.lexicon_words.keys()),
+        compounds_yaml_path=REPO_ROOT / "configs" / "compounds.yaml",
+    )
+    entries = generate_sudachi_entries(estimator, splitter, is_user_dict=False)
+    csv_path = write_sudachi_csv(entries, build_dir / "lex.csv")
+    matrix_path = estimator.write_matrix_def(build_dir / "matrix.def")
+    build_system_dic(csv_path, matrix_path, sys_dic)
     return sys_dic
 
 
@@ -102,20 +108,37 @@ def test_oov_and_kcc_boundary_preservation() -> None:
     assert repaired[0].end == 4
 
 
-def test_user_dictionary_ubuild_and_tokenization(tmp_path: Path) -> None:
+def test_user_dictionary_ubuild_and_tokenization(system_dic: Path, tmp_path: Path) -> None:
     estimator = CostEstimator()
     estimator.add_lexicon_entry("ក្រូចឆ្មារ", "PROPN", freq=500)
     splitter = CompoundSplitter()
     entries = generate_sudachi_entries(estimator, splitter, is_user_dict=True)
 
     user_csv = write_sudachi_csv(entries, tmp_path / "user.csv")
-    sys_dic = REPO_ROOT / "data" / "build" / "system_khmer.dic"
-    user_dic = build_user_dic(user_csv, sys_dic, tmp_path / "user_khmer.dic")
+    user_dic = build_user_dic(user_csv, system_dic, tmp_path / "user_khmer.dic")
 
-    tokenizer = KhmerTokenizer(user_dic_paths=[user_dic])
+    tokenizer = KhmerTokenizer(system_dic_path=system_dic, user_dic_paths=[user_dic])
     tokens = tokenizer.tokenize("ខ្ញុំប្រើប្រាស់ក្រូចឆ្មារ។", mode=SplitMode.C)
     surfaces = [t.surface for t in tokens]
     assert "ក្រូចឆ្មារ" in surfaces
+
+
+def test_user_dictionary_signature_mismatch_is_explained(
+    system_dic: Path, tmp_path: Path
+) -> None:
+    """A user dictionary built against one system dict must fail with actionable guidance."""
+    estimator = CostEstimator()
+    estimator.add_lexicon_entry("ក្រូចឆ្មារ", "PROPN", freq=500)
+    entries = generate_sudachi_entries(estimator, CompoundSplitter(), is_user_dict=True)
+    user_dic = build_user_dic(
+        write_sudachi_csv(entries, tmp_path / "mismatch.csv"),
+        system_dic,
+        tmp_path / "mismatch.dic",
+    )
+
+    bundled = REPO_ROOT / "src" / "kroch_chhmar" / "resources" / "system_khmer.dic"
+    with pytest.raises(SudachiError, match="not compatible"):
+        KhmerTokenizer(system_dic_path=bundled, user_dic_paths=[user_dic])
 
 
 def test_evaluation_benchmark_zero_kcc_violations() -> None:
@@ -157,7 +180,9 @@ def test_structured_token_merging() -> None:
     assert "@moh_kh" in tag_tokens
 
 
-def test_coeng_da_ta_visual_twins_and_rac_normalization(tmp_path: Path) -> None:
+def test_coeng_da_ta_visual_twins_and_rac_normalization(
+    system_dic: Path, tmp_path: Path
+) -> None:
     estimator = CostEstimator()
     # Register RAC canonical Coeng DA (្ដ) and Coeng TA (្ត) words
     estimator.add_lexicon_entry("កណ្ដាល", "NOUN", freq=100, is_canonical=True)
@@ -171,10 +196,9 @@ def test_coeng_da_ta_visual_twins_and_rac_normalization(tmp_path: Path) -> None:
     entries = generate_sudachi_entries(estimator, splitter, is_user_dict=True)
 
     user_csv = write_sudachi_csv(entries, tmp_path / "coeng_user.csv")
-    sys_dic = REPO_ROOT / "data" / "build" / "system_khmer.dic"
-    user_dic = build_user_dic(user_csv, sys_dic, tmp_path / "coeng_user.dic")
+    user_dic = build_user_dic(user_csv, system_dic, tmp_path / "coeng_user.dic")
 
-    tokenizer = KhmerTokenizer(user_dic_paths=[user_dic])
+    tokenizer = KhmerTokenizer(system_dic_path=system_dic, user_dic_paths=[user_dic])
 
     # 1. Both ក្ដៅ (RAC Coeng DA) and ក្តៅ (common typo Coeng TA) match as single tokens
     #    and both resolve to canonical RAC normalized_form "ក្ដៅ"

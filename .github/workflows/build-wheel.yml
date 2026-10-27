@@ -1,0 +1,115 @@
+name: Build, Test & Distribution
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "slide.html"
+      - "assets/**"
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "slide.html"
+      - "assets/**"
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Test (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install ${{ matrix.python }}
+
+      - name: Lint
+        run: uv run --with ruff ruff check src tests example
+
+      - name: Type check
+        run: uv run --with mypy mypy src/kroch_chhmar
+
+      - name: Run test suite
+        run: uv run --with pytest pytest -q
+
+  build:
+    name: Build & Verify Wheel
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Build Wheel & Source Distribution
+        run: |
+          rm -rf dist/
+          uv build
+
+      - name: Inspect Built Artifacts
+        run: |
+          ls -lh dist/
+          unzip -l dist/*.whl
+          tar tzf dist/*.tar.gz | grep -E 'configs/|data/seed/|example/app.py|resources/seed/' | head
+
+      - name: Verify Isolated Wheel Installation (bundled dictionary)
+        run: |
+          uv run --isolated --with dist/kroch_chhmar-*.whl python -c "
+          from kroch_chhmar import KhmerTokenizer, SplitMode
+          tok = KhmerTokenizer()
+          res = tok.segment('ព្រះរាជាណាចក្រកម្ពុជាមានសន្តិភាព', mode=SplitMode.C)
+          print('Segmented tokens:', res)
+          assert 'ព្រះរាជាណាចក្រកម្ពុជា' in res
+          "
+
+      - name: Verify Wheel Can Rebuild From Packaged Seed Data
+        run: |
+          BUILD_DIR="$RUNNER_TEMP/wheel-build"
+          uv run --isolated --with dist/kroch_chhmar-*.whl kroch-chhmar prepare \
+            --seed --no-raw --no-auto-holdout \
+            --build-dir "$BUILD_DIR" \
+            --interim-dir "$RUNNER_TEMP/wheel-interim" > "$RUNNER_TEMP/prepare.log"
+          cat "$RUNNER_TEMP/prepare.log"
+          uv run --isolated --with dist/kroch_chhmar-*.whl kroch-chhmar build \
+            --no-prepare --build-dir "$BUILD_DIR"
+          uv run --isolated --with dist/kroch_chhmar-*.whl kroch-chhmar tokenize "ភាសាខ្មែរ" \
+            --system-dic "$BUILD_DIR/system_khmer.dic" | tail -5
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kroch-chhmar-dist
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Attach Wheels to GitHub Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -3,13 +3,13 @@
 from kroch_chhmar.normalizer import (
     count_kccs,
     is_kcc_boundary,
-     is_kcc_dependent_start,
+    is_kcc_dependent_start,
     iter_kccs,
     normalize_khmer,
 )
 from kroch_chhmar.tokenizer import KhmerMorpheme, KhmerTokenizer, SplitMode
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     "KhmerMorpheme",

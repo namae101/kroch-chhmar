@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import math
 from collections import Counter, defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable
 
 from kroch_chhmar.dictionary.pos_mapper import (
     KHMER_DEP_POS_ID,
@@ -32,6 +32,7 @@ class LexiconStats:
     raw_lexicon_rows: int = 0
     raw_sentences: int = 0
     seen_sentence_hashes: set[str] = field(default_factory=set)
+    seen_surface_keys: set[str] = field(default_factory=set)
     dedup_sentences: int = 0
     total_corpus_tokens: int = 0
 
@@ -131,6 +132,7 @@ class CostEstimator:
             return False
 
         self.stats.raw_sentences += 1
+        self.stats.seen_surface_keys.add("".join(surface for surface, _ in normalized_items))
         if deduplicate_sentence:
             sig = " ".join(f"{s}/{p or ''}" for s, p in normalized_items)
             if sig in self.stats.seen_sentence_hashes:
@@ -248,6 +250,24 @@ class CostEstimator:
         corp_path.write_text("\n".join(corp_lines) + "\n", encoding="utf-8")
 
         return lex_path, corp_path
+
+    def best_pos(self, surface: str) -> str:
+        """
+        Return the most frequent POS tag for `surface` with a deterministic
+        lexicographic tie-break. Used wherever a single representative POS is
+        needed (e.g. when seeding compound-splitter word costs).
+
+        Using `next(iter(tags))` here would make builds depend on Python's
+        per-process string hash randomization.
+        """
+        norm = self.get_canonical_form(surface)
+        tags = self.stats.lexicon_words.get(norm)
+        if not tags:
+            return map_to_ud_pos(None, norm)
+        return max(
+            tags,
+            key=lambda tag: (self.stats.word_pos_counts.get((norm, tag), 0), tag),
+        )
 
     def estimate_word_cost(self, surface: str, ud_pos: str) -> int:
         """

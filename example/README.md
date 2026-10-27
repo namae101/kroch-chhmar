@@ -6,7 +6,7 @@ This folder contains a ready-to-run **FastAPI microservice and interactive web p
 
 ## 1. Run the FastAPI Server
 
-Make sure `data/build/system_khmer.dic` is built (`uv run kroch-chhmar build`), then launch the server with `uv`:
+The example uses the local `data/build/system_khmer.dic` when it exists (after `uv run kroch-chhmar build`) and otherwise falls back to the bundled dictionary. Launch it with `uv`:
 
 ```bash
 uv run --with fastapi --with uvicorn uvicorn example.app:app --reload --port 8000
@@ -35,7 +35,7 @@ curl -X POST http://127.0.0.1:8000/tokenize \
 {
   "mode": "C",
   "normalized_input": "ព្រះរាជាណាចក្រកម្ពុជាមានសន្តិភាពនិងសេចក្តីសុខនៅកណ្ដាលទីក្រុងនាថ្ងៃក្តៅ។",
-  "count": 10,
+  "count": 11,
   "segmented_surface": [
     "ព្រះរាជាណាចក្រកម្ពុជា", "មាន", "សន្តិភាព", "និង", "សេចក្តីសុខ",
     "នៅ", "កណ្ដាល", "ទីក្រុង", "នា", "ថ្ងៃក្តៅ", "។"

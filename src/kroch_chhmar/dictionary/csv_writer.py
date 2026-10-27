@@ -68,6 +68,89 @@ class SudachiCSVEntry:
         ]
 
 
+def summarize_split_topology(entries: list[SudachiCSVEntry]) -> dict[str, int]:
+    """Summarize Mode A/B/C counts and how many Mode C entries use a real Mode B intermediate."""
+    topology = {"A": 0, "B": 0, "C": 0, "c_with_b": 0, "c_without_b": 0}
+    for entry in entries:
+        if entry.split_type in ("A", "B", "C"):
+            topology[entry.split_type] += 1
+        if entry.split_type == "C":
+            if (
+                entry.split_info_b
+                and entry.split_info_b != "*"
+                and entry.split_info_b != entry.split_info_a
+            ):
+                topology["c_with_b"] += 1
+            else:
+                topology["c_without_b"] += 1
+    return topology
+
+
+def _parse_split_ids(raw: str) -> list[int]:
+    ids: list[int] = []
+    for part in raw.split("/"):
+        part = part.strip()
+        if part.startswith("U"):
+            part = part[1:]
+        ids.append(int(part))
+    return ids
+
+
+def validate_split_references(
+    entries: list[SudachiCSVEntry],
+    is_user_dict: bool = False,
+) -> list[str]:
+    """
+    Validate 0-based split-ID references in generated dictionary entries.
+
+    Checks that every Mode B/C entry has at least two constituent IDs, that all
+    references point backwards to an existing row, and that the referenced
+    surfaces concatenate to the entry surface (allowing Coeng DA/TA visual-twin
+    equivalence). Returns a list of human-readable errors; empty means valid.
+    """
+    errors: list[str] = []
+    for index, entry in enumerate(entries):
+        if entry.split_type not in ("B", "C"):
+            continue
+        columns = [("split_info_a", entry.split_info_a)]
+        if entry.split_type == "C":
+            columns.append(("split_info_b", entry.split_info_b))
+        for column_name, raw in columns:
+            if not raw or raw == "*":
+                errors.append(f"row {index} ({entry.surface}): missing {column_name}")
+                continue
+            try:
+                ids = _parse_split_ids(raw)
+            except ValueError:
+                errors.append(f"row {index} ({entry.surface}): non-numeric {column_name}={raw!r}")
+                continue
+            if len(ids) < 2:
+                errors.append(
+                    f"row {index} ({entry.surface}): {column_name} has fewer than 2 IDs"
+                )
+                continue
+            for referenced in ids:
+                if referenced >= index or referenced < 0 or referenced >= len(entries):
+                    errors.append(
+                        f"row {index} ({entry.surface}): {column_name} references invalid row {referenced}"
+                    )
+            if any(0 <= referenced < index for referenced in ids):
+                joined = "".join(
+                    entries[referenced].surface
+                    for referenced in ids
+                    if 0 <= referenced < len(entries)
+                )
+                if coeng_skeleton(joined) != coeng_skeleton(entry.surface):
+                    errors.append(
+                        f"row {index} ({entry.surface}): {column_name} surfaces "
+                        f"{joined!r} do not concatenate to the entry surface"
+                    )
+    if is_user_dict:
+        # User-dictionary IDs may be prefixed with `U`; the parser already handles that.
+        pass
+    return errors
+
+
 def generate_sudachi_entries(
     estimator: CostEstimator,
     splitter: CompoundSplitter,
@@ -409,8 +492,9 @@ def build_system_dic(
 
     out = Path(output_dic_path)
     out.parent.mkdir(parents=True, exist_ok=True)
-    if out.exists():
-        out.unlink()
+    temporary = out.with_name(out.stem + ".tmp" + out.suffix)
+    if temporary.exists():
+        temporary.unlink()
 
     cmd = [
         sys.executable,
@@ -420,16 +504,22 @@ def build_system_dic(
         "-m",
         str(matrix_path),
         "-o",
-        str(out),
+        str(temporary),
         "-d",
         description,
         *csv_list,
     ]
-    res = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=600)
+    except subprocess.TimeoutExpired as exc:
+        temporary.unlink(missing_ok=True)
+        raise RuntimeError("sudachipy build timed out after 600 seconds") from exc
     if res.returncode != 0:
+        temporary.unlink(missing_ok=True)
         raise RuntimeError(
             f"sudachipy build failed (exit {res.returncode}):\nSTDOUT: {res.stdout}\nSTDERR: {res.stderr}"
         )
+    temporary.replace(out)
     return out
 
 
@@ -447,8 +537,9 @@ def build_user_dic(
 
     out = Path(output_udic_path)
     out.parent.mkdir(parents=True, exist_ok=True)
-    if out.exists():
-        out.unlink()
+    temporary = out.with_name(out.stem + ".tmp" + out.suffix)
+    if temporary.exists():
+        temporary.unlink()
 
     cmd = [
         sys.executable,
@@ -458,14 +549,20 @@ def build_user_dic(
         "-s",
         str(system_dic_path),
         "-o",
-        str(out),
+        str(temporary),
         "-d",
         description,
         *csv_list,
     ]
-    res = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=600)
+    except subprocess.TimeoutExpired as exc:
+        temporary.unlink(missing_ok=True)
+        raise RuntimeError("sudachipy ubuild timed out after 600 seconds") from exc
     if res.returncode != 0:
+        temporary.unlink(missing_ok=True)
         raise RuntimeError(
             f"sudachipy ubuild failed (exit {res.returncode}):\nSTDOUT: {res.stdout}\nSTDERR: {res.stderr}"
         )
+    temporary.replace(out)
     return out

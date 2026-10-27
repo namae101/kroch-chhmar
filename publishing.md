@@ -13,7 +13,8 @@ The published wheel (`.whl`) bundles:
 - `kroch_chhmar/resources/unk.def` (OOV transition definitions)
 - `kroch_chhmar/resources/rewrite.def` (orthographic rewrite rules)
 - `kroch_chhmar/resources/compounds.yaml` (curated compound splits)
-- `kroch_chhmar/resources/system_khmer.dic` (87,237-word binary system dictionary, **~3.3 MB** compressed)
+- `kroch_chhmar/resources/system_khmer.dic` (87,119-entry / 82,428-surface binary system dictionary, **~3.3 MB** compressed)
+- `kroch_chhmar/resources/seed/` (packaged seed lexicon/corpus so `kroch-chhmar prepare --seed --no-raw` works from a wheel)
 
 When any user runs:
 ```bash
@@ -78,15 +79,14 @@ kroch-chhmar build --build-dir ./my_build_dir -o ./my_build_dir/system_khmer.dic
 
 ## 3. Dictionary Resolution Priority Order
 
-When `KhmerTokenizer()` initializes, it locates `system_khmer.dic` in the following strict priority:
+When `KhmerTokenizer()` initializes, it resolves the config and dictionary in this order:
 
 $$\begin{aligned}
-\text{1. Explicit Argument} &\longrightarrow \texttt{system\_dic\_path} \text{ passed to } \texttt{KhmerTokenizer()} \\
-\text{2. Environment Variable} &\longrightarrow \texttt{os.environ["KROCH\_CHHMAR\_SYSTEM\_DIC"]} \\
-\text{3. Config Target} &\longrightarrow \texttt{cfg\_data["systemDict"]} \text{ relative to } \texttt{sudachi.json} \\
-\text{4. Bundled Resource} &\longrightarrow \texttt{kroch\_chhmar/resources/system\_khmer.dic} \text{ (inside wheel)} \\
-\text{5. Local Repo Build} &\longrightarrow \texttt{data/build/system_khmer.dic} \text{ (local dev workspace)}
+\text{Config: 1. Explicit } \texttt{config\_path} &\longrightarrow \text{2. } \texttt{KROCH\_CHHMAR\_CONFIG} \longrightarrow \text{3. Repo } \texttt{configs/} \longrightarrow \text{4. Bundled } \texttt{resources/} \\
+\text{Dictionary: 1. Explicit } \texttt{system\_dic\_path} &\longrightarrow \text{2. } \texttt{KROCH\_CHHMAR\_SYSTEM\_DIC} \longrightarrow \text{3. Config target} \longrightarrow \text{4. Local repo build} \longrightarrow \text{5. Bundled resource}
 \end{aligned}$$
+
+In a source checkout, the repository config and `data/build/system_khmer.dic` are preferred so the Python API and CLI agree after `kroch-chhmar build`. Installed wheels fall back to the bundled resources.
 
 ---
 
@@ -106,19 +106,34 @@ uv build
 ```
 
 This creates:
-- `dist/kroch_chhmar-0.1.0-py3-none-any.whl` (~3.3 MB)
-- `dist/kroch_chhmar-0.1.0.tar.gz` (~3.2 MB)
+- `dist/kroch_chhmar-0.2.0-py3-none-any.whl` (~3.3 MB)
+- `dist/kroch_chhmar-0.2.0.tar.gz` (~4.6 MB; includes `configs/`, `data/seed/`, and `example/app.py`)
 
 ### Step 3: Test Install in an Isolated Environment
 Verify the built wheel runs cleanly without needing local repo files:
 
 ```bash
-uv run --isolated --with dist/kroch_chhmar-0.1.0-py3-none-any.whl python -c "
+uv run --isolated --with dist/kroch_chhmar-0.2.0-py3-none-any.whl python -c "
 from kroch_chhmar import KhmerTokenizer, SplitMode
 tok = KhmerTokenizer()
 print('Tokens:', tok.segment('ព្រះរាជាណាចក្រកម្ពុជា', mode=SplitMode.C))
 "
 ```
+
+Then verify that the wheel can rebuild a dictionary from its **packaged** seed data (this was previously broken — the command produced an 18-entry placeholder dictionary):
+
+```bash
+BUILD_DIR=$(mktemp -d)
+uv run --isolated --with dist/kroch_chhmar-0.2.0-py3-none-any.whl kroch-chhmar prepare \
+  --seed --no-raw --no-auto-holdout \
+  --build-dir "$BUILD_DIR" --interim-dir "$BUILD_DIR/interim"
+uv run --isolated --with dist/kroch_chhmar-0.2.0-py3-none-any.whl kroch-chhmar build \
+  --no-prepare --build-dir "$BUILD_DIR"
+```
+
+The `prepare` step should report ~213 entries (seed lexicon + POS table), not 18.
+
+> **Release checklist:** run `pytest` and `ruff check`; ensure `src/kroch_chhmar/resources/system_khmer.dic` is the current clean build; confirm the sdist contains `configs/`, `data/seed/`, and `example/app.py`; and verify the isolated wheel commands above. `prepare` is deterministic (`lex.csv`/`matrix.def` byte-identical across hash seeds), so build diffs are meaningful.
 
 ### Step 4: Publish to TestPyPI
 ```bash

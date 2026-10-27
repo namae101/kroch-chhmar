@@ -6,6 +6,8 @@ from kroch_chhmar.dictionary.csv_writer import (
     SudachiCSVEntry,
     build_system_dic,
     build_user_dic,
+    summarize_split_topology,
+    validate_split_references,
     write_sudachi_csv,
 )
 from kroch_chhmar.dictionary.pos_mapper import UD_POS_TAGS, map_to_ud_pos, pos_to_id, pos_to_sudachi_tuple
@@ -22,5 +24,7 @@ __all__ = [
     "map_to_ud_pos",
     "pos_to_id",
     "pos_to_sudachi_tuple",
+    "summarize_split_topology",
+    "validate_split_references",
     "write_sudachi_csv",
 ]

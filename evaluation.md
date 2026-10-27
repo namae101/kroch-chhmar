@@ -1,14 +1,14 @@
-# Evaluation Guide & Results (`evaluation.md`)
+# Evaluation Guide & Results (`evaluation.md`, v0.2.0)
 
-This document explains how to run the Khmer word segmentation evaluation suite in **`kroch-chhmar`**, what each evaluation metric measures, and discusses the benchmark results across multi-granular split modes (`Mode A`, `Mode B`, and `Mode C`).
+This document explains how to run the Khmer word-segmentation evaluation suite in **`kroch-chhmar`**, what each metric measures, and the results for the current (v0.2.0) held-out build.
+
+> **v0.2.0 correction:** upstream khPOS `train.all2` *contains the entire `CLOSE-TEST` split*. Earlier versions skipped the separate `khpos_close_test.pos` file but still ingested those sentences through `train.all2`, inflating the CLOSE-TEST score. `prepare` now removes exact held-out sentences before any counts are committed. See §1.3 for the contamination experiment and corrected numbers.
 
 ---
 
 ## 1. How to Run the Evaluation
 
-### 1.1 Fetch Datasets and Build the Dictionary
-
-First, ensure the datasets (`khPOS`, `NICT ALT NOVA`, `khmerlbdict`, `RAC 2022 44k`) are downloaded and the system dictionary (`system_khmer.dic`) is compiled:
+### 1.1 Fetch datasets, build the dictionary, and verify holdout integrity
 
 ```bash
 uv run kroch-chhmar fetch all
@@ -16,234 +16,306 @@ uv run kroch-chhmar prepare
 uv run kroch-chhmar build
 ```
 
-### 1.2 Run the CLI Evaluator
+`prepare` automatically treats `data/raw/khpos_open_test.pos` and `data/raw/khpos_close_test.pos` as holdout files. Pass extra holdout files with `--holdout path/to/gold.pos`, or disable auto-detection with `--no-auto-holdout`. The build log reports how many sentences were skipped (currently **1,028**).
 
-`kroch-chhmar evaluate` accepts any segmented corpus file (`-f`), a Sudachi split granularity mode (`--mode A`, `B`, or `C`), and a compound handling flag (`--join-compounds` or `--split-compounds`):
+### 1.2 Run the CLI evaluator
+
+`kroch-chhmar evaluate` accepts any segmented corpus file (`-f`), a Sudachi split granularity mode (`--mode A`, `B`, or `C`), and a compound handling flag (`--join-compounds` or `--split-compounds`). Add `--json` to emit machine-readable metrics.
 
 ```bash
-# 1. Evaluate Mode C on khPOS OPEN-TEST (Compounds Joined: '_' and '~' merged)
-uv run kroch-chhmar evaluate -f data/raw/khpos_open_test.pos --mode C --join-compounds
+# Mode C against compound-level gold segmentation
+uv run kroch-chhmar evaluate -f data/raw/khpos_open_test.pos --mode C --join-compounds --json
 
-# 2. Evaluate Mode B on khPOS OPEN-TEST (Compounds Joined)
-uv run kroch-chhmar evaluate -f data/raw/khpos_open_test.pos --mode B --join-compounds
+# Mode A against base-word (sub-compound) gold segmentation
+uv run kroch-chhmar evaluate -f data/raw/khpos_open_test.pos --mode A --split-compounds --json
 
-# 3. Evaluate Mode A on khPOS OPEN-TEST (Base Words Split: '_' and '~' split into root words)
-uv run kroch-chhmar evaluate -f data/raw/khpos_open_test.pos --mode A --split-compounds
-
-# 4. Evaluate on khPOS CLOSE-TEST
+# CLOSE-TEST
 uv run kroch-chhmar evaluate -f data/raw/khpos_close_test.pos --mode C --join-compounds
 uv run kroch-chhmar evaluate -f data/raw/khpos_close_test.pos --mode A --split-compounds
 
-# 5. Evaluate on the built-in seed corpus
+# Built-in seed corpus
 uv run kroch-chhmar evaluate -f data/seed/seed_corpus.txt --mode C
 ```
 
+### 1.3 Holdout integrity and the khPOS CLOSE-TEST issue
+
+The upstream khPOS `corpus-draft-ver-1.0/data/after-replace/train.all2` file is 12,000 lines, and **its first 1,000 lines are exactly the `CLOSE-TEST` split**:
+
+```text
+train.all2[:1000] == CLOSE-TEST     → True
+CLOSE-TEST lines present in train   → 1000 / 1000
+```
+
+Because `prepare` ingests `train.all2` as `khpos_train.pos`, skipping the separate `khpos_close_test.pos` file is not sufficient. v0.2.0 therefore applies an exact-sentence `HoldoutFilter` before committing any token counts, compound overrides, or lexicon sub-parts.
+
+To quantify the original bias, I rebuilt the dictionary under three conditions:
+
+| Experiment | CLOSE-TEST Mode C F1 | OPEN-TEST Mode C F1 |
+| :--- | ---: | ---: |
+| Previous build (CLOSE-TEST inside training) | **96.25%** | 94.85% |
+| Clean build (CLOSE/OPEN sentences removed) | **94.86%** | 94.69% |
+| Size-matched control (1,022 random non-test lines removed) | **95.86%** | 94.58% |
+
+Removing the test sentences costs ~1.0 F1 point beyond the effect of removing the same number of ordinary training sentences. The previously reported OPEN↔CLOSE gap of 1.45 points was therefore mostly leakage; on the corrected build it is **0.20 points** (94.66 vs 94.86) in Mode C and **0.28 points** (91.93 vs 92.21) in Mode A.
+
+`tests/test_data_integrity.py` asserts zero exact-sentence overlap when the real khPOS files are present (`pytest` skips it otherwise).
+
 ---
 
-## 2. Understanding the Datasets & Metric Values
+## 2. Datasets & Metrics
 
-### 2.1 Evaluation Datasets (`OPEN-TEST` & `CLOSE-TEST`)
-- **`CLOSE-TEST` (1,000 sentences, 10,397 compound tokens / 12,467 base tokens)**: Sentences drawn from a similar domain and vocabulary distribution as `khPOS` training sentences (news, economics, politics, and name lists).
-- **`OPEN-TEST` (1,000 sentences, 10,778 compound tokens / 12,931 base tokens)**: Sentences testing open-vocabulary generalization, including unseen news articles, rare loanwords (`ថេប្ល៊ិថ` *"tablet"*, `ខាល័រ` *"color"*), and voter/student proper names.
+### 2.1 Evaluation datasets
 
-### 2.2 What Each Metric Measures
-To evaluate segmentation without bias, the evaluator concatenates the gold tokens of each sentence into a raw unsegmented Khmer string, runs `KhmerTokenizer`, and compares the **character offset spans `(start, end)`** of every predicted token against the gold tokens:
+- **`CLOSE-TEST`** (1,000 sentences, 10,397 compound tokens / 12,467 base tokens): upstream this is the first 1,000 lines of `train.all2`. After v0.2.0 filtering it is a matched-distribution held-out set (same domain and annotation style as training), **not** an unseen-domain set.
+- **`OPEN-TEST`** (1,000 sentences, 10,778 compound tokens / 12,931 base tokens): open-vocabulary news, rare loanwords (`ថេប្ល៊ិថ` *“tablet”*, `ខាល័រ` *“color”*), and personal names. 11 OPEN-TEST sentences also occur verbatim in `train.all2`; the holdout filter removes them.
 
-1. **`Gold Tokens`**: Total number of words in the human-annotated reference test set.
-   - Bound derivational suffix markers (`^`, such as `សេដ្ឋ^កិច្ច`, `ពាណិជ្ជ^កម្ម`, `ជីវ^ភាព`) are always joined into their canonical Khmer lexical form (`សេដ្ឋកិច្ច`, `ពាណិជ្ជកម្ម`, `ជីវភាព`).
-   - Under **Compounds Joined** (`--join-compounds`), words linked by `_` or `~` in `khPOS` (e.g., `ក្រៅ_ពី`, `លោក~ស្រី`, `ការ~សិក្សា`) count as a single compound word (`10,778` tokens in `OPEN-TEST`).
-   - Under **Base Words Split** (`--split-compounds`), `_` and `~` are split into their constituent base words (`12,931` tokens in `OPEN-TEST`).
-2. **`Predicted Tokens`**: Total number of tokens produced by `kroch-chhmar`:
-   - **Mode C** produces the fewest tokens (`~10,200`) because it keeps long compounds and named entities together.
-   - **Mode B** produces an intermediate number (`~11,000`) by splitting long phrases into 2-part compounds.
-   - **Mode A** produces the most tokens (`~12,460`) because it decomposes compounds down to their indivisible base/root words.
-3. **`Precision` ($\frac{\text{Correct Spans}}{\text{Predicted Tokens}}$)**: Percentage of predicted words whose character `(start, end)` offsets in the unsegmented sentence exactly match a human-annotated gold word.
-4. **`Recall` ($\frac{\text{Correct Spans}}{\text{Gold Tokens}}$)**: Percentage of human-annotated gold words successfully recovered by the tokenizer.
-5. **`F1 Score` ($\frac{2 \cdot P \cdot R}{P + R}$)**: Harmonic mean combining Precision and Recall into a single overall accuracy score.
-6. **`OOV Rate` ($\frac{\text{OOV Tokens}}{\text{Predicted Tokens}}$)**: Percentage of tokens not matched from the compiled dictionary and instead handled dynamically by Sudachi's `MeCabOovPlugin` (`NUMERIC` and `SYMBOL` rules in `char.def`).
-   - **97%–100% of OOV tokens** are numbers (`២០១៤`, `២០១៥`) and punctuation (`៖`, `"`), which are intentionally grouped by `char.def` rather than enumerated in the lexicon.
-7. **`KCC Boundary Violation Rate`**: Percentage of predicted token boundaries that slice inside a **Khmer Character Cluster (KCC)** (e.g., separating a base consonant from its subscript `Coeng \u17d2` or dependent vowel).
-   - `kroch-chhmar` achieves **`0.00%` KCC violations** across all datasets and modes.
+### 2.2 What each metric measures
+
+The evaluator concatenates the gold tokens of each sentence into a raw unsegmented string, runs `KhmerTokenizer`, and compares predicted character spans to gold spans.
+
+1. **`Gold Tokens` / `Predicted Tokens`**: token counts under the chosen gold granularity.
+2. **`Precision` / `Recall` / `F1`**: span-level token metrics.
+3. **`Exact Sentence Match`**: percentage of sentences where the entire predicted token list equals the gold list. This is stricter than boundary F1.
+4. **`Boundary F1`**: precision/recall over internal character boundaries (ignoring token identity). This is the standard segmentation metric when token labels may differ but boundaries agree.
+5. **`OOV Rate`**: fraction of predicted tokens produced by Sudachi's OOV fallback. Most OOV tokens are Khmer/ASCII digits and punctuation.
+6. **`Khmer-Word OOV`**: OOV tokens containing Khmer consonants/vowels/signs (excluding digits and punctuation). This isolates genuine lexical gaps such as unseen loanwords and typos.
+7. **`KCC Boundary Violation Rate`**: fraction of predicted boundaries that split a Khmer Character Cluster. The tokenizer enforces this invariant in post-processing, so it should remain `0.00%`; it is a correctness guarantee rather than an independent quality score.
+
+Gold annotations: `^` bound-suffix markers are always joined (`សេដ្ឋ^កិច្ច` → `សេដ្ឋកិច្ច`); `_`/`~` compounds are joined under `--join-compounds` and split under `--split-compounds`.
 
 ---
 
 ## 3. Evaluation Results
 
-### 3.1 Full 4-Dataset System Dictionary (`100k` Entries) — Held-Out Evaluation
-*(Built from `khPOS train.all2`, `NICT ALT NOVA`, `RAC 2022 44k`, and `khmerlbdict`, strictly holding out `OPEN-TEST` and `CLOSE-TEST`)*:
+### 3.1 Held-out `OPEN-TEST` and `CLOSE-TEST`
 
-| Test Set | Gold Standard Granularity | Mode | Gold Tokens | Pred Tokens | Precision | Recall | **F1 Score** | OOV Rate | **KCC Violation Rate** |
-| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **`OPEN-TEST`** *(1k sents)* | **Compounds (`_` & `~` joined)** | **Mode C** | 10,778 | 10,652 | **95.41%** | **94.29%** | **94.85%** | 2.65% | **0.00%** |
-| **`OPEN-TEST`** *(1k sents)* | **Compounds (`_` & `~` joined)** | Mode B | 10,778 | 11,144 | 90.43% | 93.49% | 91.93% | 2.53% | **0.00%** |
-| **`OPEN-TEST`** *(1k sents)* | **Compounds (`_` & `~` joined)** | Mode A | 10,778 | 12,900 | 67.62% | 80.93% | 73.68% | 2.19% | **0.00%** |
-| **`OPEN-TEST`** *(1k sents)* | **Base Words (`_` & `~` split)** | **Mode A** | 12,931 | 12,900 | **92.15%** | **91.93%** | **92.04%** | 2.19% | **0.00%** |
-| **`OPEN-TEST`** *(1k sents)* | **Base Words (`_` & `~` split)** | Mode B | 12,931 | 11,144 | 81.65% | 70.37% | 75.59% | 2.53% | **0.00%** |
-| **`OPEN-TEST`** *(1k sents)* | **Base Words (`_` & `~` split)** | Mode C | 12,931 | 10,652 | 80.14% | 66.02% | 72.40% | 2.65% | **0.00%** |
-| **`CLOSE-TEST`** *(1k sents)* | **Compounds (`_` & `~` joined)** | **Mode C** | 10,397 | 10,194 | **97.20%** | **95.31%** | **96.25%** | 2.25% | **0.00%** |
-| **`CLOSE-TEST`** *(1k sents)* | **Compounds (`_` & `~` joined)** | Mode B | 10,397 | 10,693 | 91.66% | 94.27% | 92.94% | 2.14% | **0.00%** |
-| **`CLOSE-TEST`** *(1k sents)* | **Base Words (`_` & `~` split)** | **Mode A** | 12,467 | 12,460 | **92.22%** | **92.17%** | **92.20%** | 1.84% | **0.00%** |
+| Test Set | Gold Granularity | Mode | Gold Tok. | Pred Tok. | Precision | Recall | **F1** | Exact Sent. | Boundary F1 | OOV | KCC |
+| :--- | :--- | :---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| **OPEN** | Compounds joined | **C** | 10,778 | 10,669 | **95.14%** | **94.18%** | **94.66%** | 78.40% | **97.79%** | 2.75% | 0.00% |
+| OPEN | Compounds joined | B | 10,778 | 11,159 | 90.16% | 93.35% | 91.73% | 75.00% | 96.21% | 2.63% | 0.00% |
+| OPEN | Compounds joined | A | 10,778 | 12,886 | 67.72% | 80.97% | 73.76% | 27.70% | 89.73% | 2.27% | 0.00% |
+| **OPEN** | Base words split | **A** | 12,931 | 12,886 | **92.09%** | **91.77%** | **91.93%** | 68.00% | **96.90%** | 2.27% | 0.00% |
+| OPEN | Base words split | B | 12,931 | 11,159 | 81.69% | 70.50% | 75.68% | 30.20% | 90.92% | 2.63% | 0.00% |
+| OPEN | Base words split | C | 12,931 | 10,669 | 80.17% | 66.14% | 72.48% | 30.40% | 89.11% | 2.75% | 0.00% |
+| **CLOSE** | Compounds joined | **C** | 10,397 | 10,303 | **95.29%** | **94.43%** | **94.86%** | 83.00% | **97.90%** | 2.53% | 0.00% |
+| CLOSE | Compounds joined | B | 10,397 | 10,755 | 90.47% | 93.58% | 92.00% | 78.60% | 96.36% | 2.43% | 0.00% |
+| CLOSE | Compounds joined | A | 10,397 | 12,455 | 67.52% | 80.88% | 73.60% | 28.50% | 89.67% | 2.10% | 0.00% |
+| **CLOSE** | Base words split | **A** | 12,467 | 12,455 | **92.25%** | **92.16%** | **92.21%** | 70.30% | **97.03%** | 2.10% | 0.00% |
+| CLOSE | Base words split | B | 12,467 | 10,755 | 81.42% | 70.24% | 75.42% | 31.60% | 90.84% | 2.43% | 0.00% |
+| CLOSE | Base words split | C | 12,467 | 10,303 | 80.06% | 66.17% | 72.45% | 32.00% | 89.14% | 2.53% | 0.00% |
 
-### 3.2 Full `khPOS` Corpus Evaluation (All 14,000 Sentences)
-*(Evaluated across the complete 14,000-sentence `khPOS` corpus: `train.all2` [12,000 sentences] + held-out `OPEN-TEST` [1,000 sentences] + held-out `CLOSE-TEST` [1,000 sentences])*
+**Khmer-word OOVs:** `OPEN-TEST` **11** tokens (`0.10%`), `CLOSE-TEST` **9** (`0.09%`). Examples include `ថេប្ល៊ិថ`, `ខាល័រ`, `យុត្តាធិការ`, `សុឆ្ឆន្ទៈ`, `ជង្គ្រោង`.
 
-| Split | Gold Standard Granularity | Mode | Exact Sentence Match | Token Precision | Token Recall | **Token F1** | **Boundary F1** | Speed (`sent/s`) |
-| :--- | :--- | :---: |---:|---:|---:|---:|---:|---:|
-| **`train.all2`** *(12,000 sents)* | **Compounds (`_` & `~` joined)** | **Mode C** | `9,942 / 12,000` (**82.85%**) | 96.84% | 94.94% | **95.88%** | **98.12%** | 6,802 |
-| **`OPEN-TEST`** *(1,000 sents)* | **Compounds (`_` & `~` joined)** | **Mode C** | `786 / 1,000` (**78.60%**) | 95.41% | 94.29% | **94.85%** | **97.60%** | 6,882 |
-| **`CLOSE-TEST`** *(1,000 sents)* | **Compounds (`_` & `~` joined)** | **Mode C** | `856 / 1,000` (**85.60%**) | 97.20% | 95.31% | **96.25%** | **98.21%** | 7,121 |
-| **All `khPOS` (`14,000` sents)** | **Compounds (`_` & `~` joined)** | **Mode C** | **`11,584 / 14,000` (`82.74%`)** | **96.76%** | **94.92%** | **`95.83%`** | **`98.08%`** | **`6,526` (`2.15s`)** |
-| **`train.all2`** *(12,000 sents)* | **Base Words (`_` & `~` split)** | **Mode A** | `8,248 / 12,000` (**68.73%**) | 92.24% | 91.81% | **92.02%** | **96.84%** | 6,488 |
-| **`OPEN-TEST`** *(1,000 sents)* | **Base Words (`_` & `~` split)** | **Mode A** | `679 / 1,000` (**67.90%**) | 92.15% | 91.93% | **92.04%** | **96.79%** | 6,613 |
-| **`CLOSE-TEST`** *(1,000 sents)* | **Base Words (`_` & `~` split)** | **Mode A** | `698 / 1,000` (**69.80%**) | 92.22% | 92.17% | **92.20%** | **96.81%** | 6,768 |
-| **All `khPOS` (`14,000` sents)** | **Base Words (`_` & `~` split)** | **Mode A** | **`9,625 / 14,000` (`68.75%`)** | **92.23%** | **91.84%** | **`92.04%`** | **`96.83%`** | **`6,338` (`2.21s`)** |
+### 3.2 Full 14,000-sentence khPOS corpus
 
-### 3.3 Vocabulary Extension & Domain-Aligned Dictionary Evaluation
-*(Demonstrating the impact of extending the dictionary with domain vocabulary / test sentences)*:
+This table is **mostly in-sample**: up to 10,972 training sentences plus 1,000 CLOSE-TEST sentences now filtered from training and 1,000 OPEN-TEST sentences. Use §3.1 for held-out comparisons.
 
-| Dictionary Configuration | Test Set | Gold Standard Granularity | Best Mode | Precision | Recall | **F1 Score** | Khmer-Word OOVs | Speed (1k sents) |
-| :--- | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **`khPOS`-Aligned Dict** | **`OPEN-TEST`** | Compounds (`_` & `~` joined) | **Mode C** | **98.74%** | **97.96%** | **98.35%** | **0** | **0.28s** |
-| **`khPOS`-Aligned Dict** | **`OPEN-TEST`** | Base Words (`_` & `~` split) | **Mode A** | **93.47%** | **96.34%** | **94.89%** | **0** | **0.27s** |
-| **`khPOS`-Aligned Dict** | **`CLOSE-TEST`** | Compounds (`_` & `~` joined) | **Mode C** | **98.67%** | **97.81%** | **98.24%** | **0** | **0.28s** |
-| **`khPOS`-Aligned Dict** | **`CLOSE-TEST`** | Base Words (`_` & `~` split) | **Mode A** | **93.15%** | **96.13%** | **94.62%** | **0** | **0.27s** |
-| **Full 4-Dataset 100k Dict (Extended)** | **`OPEN-TEST`** | Base Words (`_` & `~` split) | **Mode A** | **87.57%** | **84.36%** | **85.93%** | **0** | **0.28s** |
-| **Full 4-Dataset 100k Dict (Extended)** | **`OPEN-TEST`** | Compounds (`_` & `~` joined) | **Mode C** | **87.41%** | **82.21%** | **84.73%** | **0** | **0.30s** |
-| **Full 4-Dataset 100k Dict (Extended)** | **`CLOSE-TEST`** | Base Words (`_` & `~` split) | **Mode A** | **88.07%** | **84.90%** | **86.45%** | **0** | **0.27s** |
-| **Full 4-Dataset 100k Dict (Extended)** | **`CLOSE-TEST`** | Compounds (`_` & `~` joined) | **Mode C** | **87.04%** | **81.85%** | **84.37%** | **0** | **0.29s** |
+| Split | Gold Granularity | Mode | Exact Sentence Match | Token Precision | Token Recall | **Token F1** | **Boundary F1** | Speed (sent/s) |
+| :--- | :--- | :---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `train.all2` (12,000) | Compounds joined | **C** | 9,884 / 12,000 (**82.37%**) | 96.48% | 94.82% | **95.64%** | **98.23%** | 3,510 |
+| `OPEN-TEST` (1,000) | Compounds joined | **C** | 784 / 1,000 (**78.40%**) | 95.14% | 94.18% | **94.66%** | **97.79%** | 3,555 |
+| `CLOSE-TEST` (1,000) | Compounds joined | **C** | 830 / 1,000 (**83.00%**) | 95.29% | 94.43% | **94.86%** | **97.90%** | 3,699 |
+| **All khPOS (14,000)** | Compounds joined | **C** | **11,498 / 14,000** (**82.13%**) | **96.30%** | **94.75%** | **95.52%** | **98.18%** | **3,558** |
+| `train.all2` (12,000) | Base words split | **A** | 8,287 / 12,000 (**69.06%**) | 92.38% | 91.78% | **92.08%** | **96.98%** | 3,713 |
+| `OPEN-TEST` (1,000) | Base words split | **A** | 680 / 1,000 (**68.00%**) | 92.09% | 91.77% | **91.93%** | **96.90%** | 3,841 |
+| `CLOSE-TEST` (1,000) | Base words split | **A** | 703 / 1,000 (**70.30%**) | 92.25% | 92.16% | **92.21%** | **97.03%** | 3,680 |
+| **All khPOS (14,000)** | Base words split | **A** | **9,670 / 14,000** (**69.07%**) | **92.35%** | **91.81%** | **92.08%** | **96.98%** | **3,710** |
+
+### 3.3 Test-vocabulary upper bound (not a held-out result)
+
+Earlier documentation reported a **`khPOS`-aligned dictionary** at 98.35% (OPEN, Mode C) / 94.89% (OPEN, Mode A) and 98.24% / 94.62% (CLOSE). That dictionary was extended with the test vocabulary (and, for CLOSE, test sentences). It is an **oracle/upper bound** illustrating how much headroom dictionary coverage provides; it is not comparable to §3.1 and is no longer presented as a headline result. It is retained here for historical context only:
+
+| Configuration | Test Set | Mode | F1 | Status |
+| :--- | :--- | :---: | ---: | :--- |
+| `khPOS`-aligned dictionary | OPEN-TEST | C | 98.35% | test-vocabulary upper bound |
+| `khPOS`-aligned dictionary | OPEN-TEST | A | 94.89% | test-vocabulary upper bound |
+| `khPOS`-aligned dictionary | CLOSE-TEST | C | 98.24% | test-vocabulary upper bound |
+| `khPOS`-aligned dictionary | CLOSE-TEST | A | 94.62% | test-vocabulary upper bound |
+
+For a legitimate domain-adaptation measurement, extend the dictionary with a **separate development** vocabulary, then evaluate once on OPEN/CLOSE.
+
+### 3.4 POS tagging on boundary-correct tokens
+
+`kroch-chhmar evaluate-pos` compares predicted UD POS tags to the khPOS gold tags on tokens whose spans exactly match the gold segmentation. Boundary errors are reported separately as `Segmentation Coverage`; they are not counted as POS errors.
+
+| Test Set | Mode | Gold Tokens | Aligned Tokens | Coverage | POS Accuracy | Macro F1 |
+| :--- | :---: | ---: | ---: | ---: | ---: | ---: |
+| OPEN-TEST | C | 10,778 | 10,151 | 94.18% | **75.20%** | 52.02% |
+| OPEN-TEST | A | 12,931 | 11,867 | 91.77% | **61.69%** | 42.99% |
+| CLOSE-TEST | C | 10,397 | 9,818 | 94.43% | **75.86%** | 54.86% |
+| CLOSE-TEST | A | 12,467 | 11,490 | 92.16% | **62.09%** | 44.99% |
+
+These numbers reflect the dictionary/heuristic POS priors described in the README: frequent corpus words are usually correct, while rare words and Mode A sub-tokens (which inherit a parent tag or a heuristic `NOUN` default) are much weaker. Macro F1 is low because several UD tags are rare. This is **not** a trained POS tagger benchmark; it is a diagnostic of the lexical priors shipped with the dictionary.
 
 ---
 
 ## 4. Discussion & Analysis
 
-1. **Multi-Granular Alignment (`Mode A` vs. `Mode B` vs. `Mode C`)**:
-   - **Mode C** excels when evaluated against compound-joined annotations (`94.82%–96.27% F1` on held-out test sets, **`95.86% F1`** across all 14,000 `khPOS` sentences, and **`98.35% F1`** on the domain-aligned dictionary), keeping multi-word expressions and named entities intact (`ព្រះរាជាណាចក្រកម្ពុជា`, `ការសិក្សា`).
-   - **Mode A** excels when evaluated against fine-grained base words (`92.00%–92.22% F1` on held-out test sets, **`92.06% F1`** across all 14,000 sentences, and **`94.89% F1`** on the domain-aligned dictionary), decomposing compounds into root words (`ព្រះ | រាជាណាចក្រ | កម្ពុជា`, `ការ | សិក្សា`) for high-recall search indexing.
-   - **Mode B** provides a balanced middle granularity (`91.89%–92.97% F1`), splitting long named entities while preserving 2-part derived compounds.
-
-2. **Vocabulary Extensibility & OOV Elimination**:
-   - On held-out `OPEN-TEST`, only **11 tokens out of 10,778** (`0.10%`) were Khmer-word OOVs (primarily phonetic loanwords like `ថេប្ល៊ិថ` *"tablet"*, `ខាល័រ` *"color"*, and corpus spelling variations like `ដុលារ`, `សំនេរ`, `យុត្តាធិកា`, `សុឆ្ឆន្ទៈ`), while `CLOSE-TEST` had **0** Khmer-word OOVs.
-   - Extending the dictionary vocabulary (`kroch-chhmar build` or `kroch-chhmar ubuild` for user dictionaries) takes less than a second, immediately reducing Khmer-word OOVs to **`0`** and boosting domain-aligned accuracy to **`98.35% F1`**.
-
-3. **Strong Generalization & Zero KCC Violations**:
-   - The F1 gap between held-out `OPEN-TEST` and `CLOSE-TEST` is only **`1.45%`** in Mode C (`94.82%` vs. `96.27%`) and **`0.22%`** in Mode A (`92.00%` vs. `92.22%`), demonstrating strong generalization without overfitting.
-   - Across all 14,000 `khPOS` sentences, the combination of `char_khmer.def` (`NOOOVBOW` / `NOOOVEOW`) and the KCC OOV provider achieved a **`0.00%` KCC boundary violation rate**, guaranteeing that Khmer syllable clusters are never split mid-cluster.
+1. **Held-out quality:** Mode C reaches **94.66%** F1 on OPEN-TEST and **94.86%** on CLOSE-TEST; Mode A reaches **91.93%** and **92.21%**. Mode B is intermediate (**91.73%** / **92.00%** against compound gold; **75.68%** / **75.42%** against base-word gold). The Mode B numbers are not measured against a genuine B-level gold standard, because none exists in khPOS.
+2. **Generalization is now honest but modest:** the held-out OPEN↔CLOSE gap is **0.20 points** in Mode C and **0.28 points** in Mode A. After fixing the CLOSE-TEST leak, there is no large “generalization gap” to explain; the two test sets behave almost identically.
+3. **OOV is mostly non-lexical:** 2.75% of OPEN tokens are OOV, but only **11** contain Khmer letters (0.10%). The rest are digits and punctuation intentionally left to OOV handling.
+4. **Dictionary extension still has clear value:** adding domain terms through `kroch-chhmar ubuild` is fast and removes lexical OOVs. The 98.35% upper bound shows the ceiling when the test vocabulary is known, not what to expect on unseen text.
+5. **Mode B is not a complete intermediate layer:** only **2 of 14,572** Mode C entries use a curated Mode B intermediate. DP-derived long compounds split directly from C to A. The `prepare` log reports this ratio. A future version could construct B intermediates systematically, but arbitrary groupings would not be linguistically grounded.
+6. **POS tags are lexical priors:** corpus-attested words use khPOS/ALT counts, RAC headwords use RAC labels, and untyped wordlists fall back to heuristics (59,043 of 87,119 rows are `NOUN`). No POS-accuracy benchmark is claimed.
+7. **KCC guarantees hold:** 0.00% violations across all 14,000 sentences and all modes, enforced by `char.def` flags plus `enforce_kcc_boundaries`.
 
 ---
 
-## 5. Error Analysis & Mis-Segmentation Breakdown (Across All 14,000 `khPOS` Sentences)
+## 5. Error Analysis
 
-Across all 14,000 `khPOS` sentences:
-- **Mode C** matches **11,593 / 14,000 sentences (`82.81%`)** with 100% token-for-token accuracy, and has at least one boundary difference on **2,407 sentences (`17.19%`)**.
-- **Mode A** matches **9,629 / 14,000 sentences (`68.78%`)** with 100% token-for-token accuracy, and has differences on **4,371 sentences (`31.22%`)**.
+Across all 14,000 khPOS sentences (current build):
 
-### 5.1 Mode C Mis-Segmentation Categories
+- **Mode C:** **11,498 / 14,000 (82.13%)** exact sentence matches; **2,502** sentences contain at least one boundary difference.
+- **Mode A:** **9,670 / 14,000 (69.07%)** exact matches; **4,330** sentences differ.
 
-When inspecting the **2,407 mismatched sentences** in Mode C, the discrepancies fall into four main categories:
+### 5.1 Mode C mismatch categories
 
-#### Category A: Annotation Inconsistency in `khPOS` Itself (Largest Source of Discrepancies)
-In `khPOS`, human annotators sometimes joined compounds with `_`/`~` (e.g., `ប្រទេស_កម្ពុជា`, `ត្រូវ_បាន`) and other times left the exact same words separated by spaces (`ប្រទេស កម្ពុជា`, `ត្រូវ បាន`). Because `kroch-chhmar`'s Viterbi lattice is deterministic, it segments a given phrase consistently every time:
+#### A. Annotation inconsistency in khPOS (largest source)
 
-##### 1. Merged by `kroch-chhmar` (Mode C) when `khPOS` left them split:
-| Count | `khPOS` Gold (Split) | `kroch-chhmar` (Mode C) Output | Meaning / Explanation |
+khPOS annotators sometimes join compounds with `_`/`~` and sometimes leave the same words separated. The Viterbi decoder is deterministic, so it segments a phrase consistently every time.
+
+**Merged by `kroch-chhmar` when khPOS left the words split:**
+
+| Count | `khPOS` Gold (split) | `kroch-chhmar` (Mode C) | Meaning |
 |---:|:---|:---|:---|
-| **124×** | `ប្រទេស \| កម្ពុជា` | `ប្រទេសកម្ពុជា` | *"Cambodia"* — annotated as `ប្រទេស_កម្ពុជា` in most of `khPOS`, but left split 124 times |
-| **93×** | `នៅ \| ពេល` | `នៅពេល` | *"when / at the time"* |
-| **80×** | `រាជធានី \| ភ្នំពេញ` | `រាជធានីភ្នំពេញ` | *"Phnom Penh Capital"* |
-| **64×** | `មិន \| ទាន់` | `មិនទាន់` | *"not yet"* |
-| **60×** | `នាយក \| រដ្ឋមន្ត្រី` | `នាយករដ្ឋមន្ត្រី` | *"Prime Minister"* |
-| **41×** | `ផ្សេង \| ទៀត` | `ផ្សេងទៀត` | *"other / another"* |
-| **35×** | `ភាសា \| ខ្មែរ` | `ភាសាខ្មែរ` | *"Khmer language"* |
-| **30×** | `ចេញ \| ពី` / `យក \| ទៅ` | `ចេញពី` / `យកទៅ` | *"out from"* / *"take to"* |
-| **29×** | `ពស់ \| កេងកង` | `ពស់កេងកង` | *"Keng Kang snake"* (folktale title) |
-| **26×** | `អង្គការ \| មិន \| មែន \| រដ្ឋាភិបាល` | `អង្គការមិនមែនរដ្ឋាភិបាល` | *"Non-Governmental Organization (NGO)"* |
-| **24×** | `អគ្គ \| លេខាធិការ` | `អគ្គលេខាធិការ` | *"Secretary-General"* |
+| **124×** | `ប្រទេស \| កម្ពុជា` | `ប្រទេសកម្ពុជា` | *Cambodia* |
+| **96×** | `នៅ \| ពេល` | `នៅពេល` | *when / at the time* |
+| **80×** | `រាជធានី \| ភ្នំពេញ` | `រាជធានីភ្នំពេញ` | *Phnom Penh Capital* |
+| **64×** | `មិន \| ទាន់` | `មិនទាន់` | *not yet* |
+| **61×** | `នាយក \| រដ្ឋមន្ត្រី` | `នាយករដ្ឋមន្ត្រី` | *Prime Minister* |
+| **41×** | `ផ្សេង \| ទៀត` | `ផ្សេងទៀត` | *other / another* |
+| **35×** | `ភាសា \| ខ្មែរ` | `ភាសាខ្មែរ` | *Khmer language* |
+| **32×** | `ចេញ \| ពី` | `ចេញពី` | *out from* |
+| **30×** | `រស់ \| នៅ` | `រស់នៅ` | *live / reside* |
+| **29×** | `ពស់ \| កេងកង` | `ពស់កេងកង` | *Keng Kang snake* (folktale) |
+| **26×** | `អង្គការ \| មិន \| មែន \| រដ្ឋាភិបាល` | `អង្គការមិនមែនរដ្ឋាភិបាល` | *non-governmental organization* |
+| **24×** | `អគ្គ \| លេខាធិការ` | `អគ្គលេខាធិការ` | *Secretary-General* |
 
-##### 2. Split by `kroch-chhmar` (Mode C) when `khPOS` joined them:
-| Count | `khPOS` Gold (Joined) | `kroch-chhmar` (Mode C) Output | Meaning / Explanation |
+**Split by `kroch-chhmar` when khPOS joined the words:**
+
+| Count | `khPOS` Gold (joined) | `kroch-chhmar` (Mode C) | Meaning |
 |---:|:---|:---|:---|
-| **64×** | `ត្រូវបាន` | `ត្រូវ \| បាន` | Passive auxiliary *"was / has been"* — individual unigrams `ត្រូវ` + `បាន` are so frequent that their sum of costs slightly beats the compound cost |
-| **55×** | `ឲ្យបាន` | `ឲ្យ \| បាន` | *"so as to / in order to"* |
-| **41×** | `ពេលនេះ` | `ពេល \| នេះ` | *"this time / now"* |
-| **34×** | `បានជា` | `បាន \| ជា` | *"became / that is why"* |
-| **30×** | `ជាដើម` | `ជា \| ដើម` | *"et cetera / as the beginning"* |
-| **21×** | `ហើយនិង` / `ជាថ្មី` | `ហើយ \| និង` / `ជា \| ថ្មី` | *"and also"* / *"anew"* |
-| **18×** | `ផ្លូវការ` / `ទៅជា` | `ផ្លូវ \| ការ` / `ទៅ \| ជា` | *"official"* / *"become"* |
+| **198×** | `ត្រូវបាន` | `ត្រូវ \| បាន` | passive auxiliary *“was / has been”* |
+| **57×** | `ឲ្យបាន` | `ឲ្យ \| បាន` | *so as to / in order to* |
+| **41×** | `ពេលនេះ` | `ពេល \| នេះ` | *this time / now* |
+| **34×** | `បានជា` | `បាន \| ជា` | *became / that is why* |
+| **30×** | `ជាដើម` | `ជា \| ដើម` | *et cetera / as the beginning* |
+| **28×** | `មើលឃើញ` | `មើល \| ឃើញ` | *to see* |
+| **21×** | `ហើយនិង` | `ហើយ \| និង` | *and also* |
+| **19×** | `ដំណើរការ` | `ដំណើរ \| ការ` | *operation / to operate* |
+| **18×** | `ផ្លូវការ` | `ផ្លូវ \| ការ` | *official* |
+| **18×** | `មនុស្សលោក` | `មនុស្ស \| លោក` | *mankind* |
+| **18×** | `ទៅជា` | `ទៅ \| ជា` | *become* |
+| **15×** | `ជាថ្មី` | `ជា \| ថ្មី` | *anew* |
 
-#### Category B: Overlapping Boundary Shifts (`ការ` Nominalizations & Compounds)
-When two valid compounds share a middle morpheme (especially `ការ` *"action/matter"*), `kroch-chhmar` sometimes attaches `ការ` to the right word when the gold standard attached it to the left word (or vice versa):
-- **33×**: `ការបាត់ | ខ្លួន` $\to$ `ការ | បាត់ខ្លួន` (*"the disappearance"* vs. *"nominalizer + disappear"*)
-- **`OPEN-TEST #123`**: `វិធានការ | កាត់បន្ថយ` (*"measures + to reduce"*) $\to$ `វិធាន | ការកាត់បន្ថយ` (*"rule + reduction"*), because `ការកាត់បន្ថយ` has a slightly lower path cost than `វិធានការ`.
+#### B. Overlapping boundary shifts (`ការ` nominalizations)
 
-#### Category C: OOV Typos, Rare Loanwords, and Personal Names (Unseen in Training)
-When `kroch-chhmar` encounters an out-of-vocabulary (OOV) spelling error or rare foreign transliteration in `OPEN-TEST`, the KCC OOV handler (`KhmerKccOovProvider`) falls back to KCC chunks or partial dictionary matches:
-- **Typo (`OPEN-TEST #109`)**: `ដុលារ` (a typo for `ដុល្លារ` *"dollar"*, missing the subscript `្`+`ល`) is not in the dictionary, so `kroch-chhmar` splits it into KCCs: `ដុ | លា | រ`.
-- **Rare English Transliteration (`OPEN-TEST #76`)**: `ថេប្ល៊ិថ` (*"tablet"*) is unseen in all 4 dictionaries, so `kroch-chhmar` splits it into KCCs: `ថេ | ប្ល៊ិ | ថ`.
-- **Ambiguous Personal Name (`OPEN-TEST #51`)**: `ខ្ញុំ | ឈ្មោះ | កូ | រេនា` (*"My name is Ko Rena"*) $\to$ `ខ្ញុំ | ឈ្មោះ | កូរេ | នា` because `កូរេ` (*"Korea"*) is a high-frequency dictionary word.
+When two valid compounds share a middle morpheme such as `ការ`, the decoder can attach `ការ` to the right word:
 
-#### Category D: Structured Token Merging (`merge_structured_tokens`)
-To prevent Sudachi's `char.def` `SYMBOL` rule (`INVOKE=1, GROUP=0, LENGTH=1`) from splitting structured spans character-by-character, `KhmerTokenizer` applies `merge_structured_tokens()` over character offsets `(begin, end)`:
-- **URLs, Domains & Emails**: `http://abc.com`, `https://mptc.gov.kh/news?id=12`, `info@rac.edu.kh`, and `www.moe.gov.kh` are preserved as single tokens (`SYM` / `PROPN`) while stripping trailing sentence punctuation.
-- **Formatted Numbers & Times**: Decimals, thousands, and clock times like `២.៦២៥`, `១,៧៥`, `1,250.50`, and `០៨:៣០` are merged into single `NUM` tokens (resolving `OPEN-TEST #82` and `OPEN-TEST #324`).
-- **Ellipses, Peyyal & Abbreviations**: `...` (`20×` in `khPOS`), `។ល។`, `គ.ស.`, `ព.ស.`, and `U.S.A.` are kept intact as single tokens.
-- **Alphanumeric Hyphenated Terms & Social Tags**: `COVID-19`, `កូវីដ-១៩`, `Wi-Fi`, `#Khmer2026`, and `@moh_kh` are preserved as single tokens.
-- *Note on `khPOS` Sports Scores & Section Numbers*: In a few `khPOS` sentences, sports scores (`១ | . | ០` *"1-0"*) and section numbers (`២ | . | ១` *"Section 2.1"*) are annotated as 3 separate tokens in gold, which `merge_structured_tokens()` merges into `១.០` and `២.១`.
+- `វិធានការ | កាត់បន្ថយ` → `វិធាន | ការកាត់បន្ថយ` (OPEN-TEST #123), because `ការកាត់បន្ថយ` has a slightly lower path cost.
+
+#### C. OOV typos, rare loanwords, and names
+
+- `ដុលារ` (typo for `ដុល្លារ` *“dollar”*) → `ដុ | លា | រ`.
+- `ថេប្ល៊ិថ` (*“tablet”*) → `ថេ | ប្ល៊ិ | ថ`.
+- `ខាល័រ` (*“color”*) contributes an OOV fragment because it is absent from all four dictionaries.
+- `កូ | រេនា` (personal name) → `កូរេ | នា` because `កូរេ` (*“Korea”*) is a high-frequency word.
+
+#### D. Structured token merging
+
+`merge_structured_tokens()` prevents Sudachi's `SYMBOL` rule from splitting structured spans:
+
+- URLs, domains, and emails: `http://abc.com`, `https://mptc.gov.kh/news?id=12`, `info@rac.edu.kh`.
+- Formatted numbers and times: `២.៦២៥`, `១,៧៥`, `1,250.50`, `០៨:៣០`.
+- Ellipses, peyyal, and abbreviations: `...`, `។ល។`, `គ.ស.`, `U.S.A.`.
+- Hyphenated terms and tags: `COVID-19`, `កូវីដ-១៩`, `Wi-Fi`, `#Khmer2026`, `@moh_kh`.
+
+A few khPOS sports scores and section numbers are annotated as three tokens (`១ | . | ០`, `២ | . | ១`), which the merger intentionally joins into `១.០` and `២.១`.
+
+### 5.2 Concrete examples from the current build
+
+These are illustrative snippets; the full per-sentence report can be regenerated with `--json`.
+
+1. **Overlapping compound (`OPEN-TEST` #123):** Gold `វិធានការ | កាត់បន្ថយ` → Predicted `វិធាន | ការកាត់បន្ថយ`.
+2. **OOV typo (`OPEN-TEST` #109):** Gold `១ | ដុលារ | ដែរ` → Predicted `១ | ដុ | លា | រ | ដែរ`.
+3. **Unseen loanword (`OPEN-TEST` #76):** Gold `កុំព្យូទ័រ | ថេប្ល៊ិថ | ដែល` → Predicted `កុំព្យូទ័រ | ថេ | ប្ល៊ិ | ថ | ដែល`.
+4. **Name ambiguity (`OPEN-TEST` #51):** Gold `ខ្ញុំ | ឈ្មោះ | កូ | រេនា` → Predicted `ខ្ញុំ | ឈ្មោះ | កូរេ | នា`.
+5. **Structured number preserved (`OPEN-TEST` #82):** `២.៦២៥` is emitted as a single `NUM` token instead of `២ | . | ៦២៥`.
+
+### 5.3 Mode A mismatches (vs. split gold)
+
+Mode A keeps 2-KCC words whole unless an explicit override exists, which causes two directions of error:
+
+**2-KCC compounds kept whole:**
+
+| Count | Gold split | `kroch-chhmar` (Mode A) |
+|---:|:---|:---|
+| **436×** | `នៅ \| ក្នុង` | `នៅក្នុង` |
+| **221×** | `ពួក \| គេ` | `ពួកគេ` |
+| **174×** | `ភ្នំ \| ពេញ` | `ភ្នំពេញ` |
+| **168×** | `ជា \| ច្រើន` | `ជាច្រើន` |
+| **145×** | `ប្រជា \| ជន` | `ប្រជាជន` |
+| **143×** | `កីឡា \| ករ` | `កីឡាករ` |
+| **120×** | `ព្រះ \| អង្គ` | `ព្រះអង្គ` |
+| **98×** | `អន្តរ \| ជាតិ` | `អន្តរជាតិ` |
+| **96×** | `ម្សិល \| មិញ` | `ម្សិលមិញ` |
+| **89×** | `រាជ \| ធានី` | `រាជធានី` |
+| **75×** | `រស់ \| នៅ` | `រស់នៅ` |
+| **75×** | `យ៉ាង \| ណា` | `យ៉ាងណា` |
+
+**Multi-KCC words split although khPOS did not mark them with `_`:**
+
+| Count | Gold | `kroch-chhmar` (Mode A) |
+|---:|:---|:---|
+| **112×** | `នគរបាល` | `នគរ \| បាល` |
+| **103×** | `លីកាដូ` (LICADHO) | `លី \| កាដូ` |
+| **73×** | `របាយការណ៍` | `របាយ \| ការណ៍` |
+| **67×** | `ត្រូវតែ` | `ត្រូវ \| តែ` |
+| **58×** | `រូបភាព` | `រូប \| ភាព` |
+| **55×** | `វៀតណាម` | `វៀត \| ណាម` |
+| **51×** | `មេដាយ` | `មេ \| ដាយ` |
+| **47×** | `ដំណើរការ` | `ដំណើរ \| ការ` |
+| **45×** | `ចំណាត់ថ្នាក់` | `ចំណាត់ \| ថ្នាក់` |
+| **42×** | `ស្ថានភាព` | `ស្ថាន \| ភាព` |
+| **42×** | `មូលហេតុ` | `មូល \| ហេតុ` |
+| **36×** | `អូស្ត្រាលី` | `អូស្ត្រា \| លី` |
 
 ---
 
-### 5.2 Concrete Mis-Segmented Sentence Examples from Held-Out `OPEN-TEST`
+## 6. Reproducibility Checklist
 
-#### Example 1: Overlapping Compound Boundary (`វិធានការ` vs. `ការកាត់បន្ថយ`) — `OPEN-TEST #123`
-- **Gold (Joined)**:
-  `វិធានការ | កាត់បន្ថយ | ការបញ្ចេញ | ឧស្ម័ន | ផ្ទះកញ្ចក់ | នៅ | ទីក្រុង | តូក្យូ`
-- **`kroch-chhmar` (Mode C)** *(shifted `ការ` from `វិធានការ` to `ការកាត់បន្ថយ`)*:
-  `វិធាន | ការកាត់បន្ថយ | ការបញ្ចេញ | ឧស្ម័ន | ផ្ទះកញ្ចក់ | នៅ | ទីក្រុង | តូក្យូ`
+```bash
+# 1. Install and run the test suite (37 tests)
+uv run --with pytest pytest -q
+uv run --with ruff ruff check src tests example
+uv run --with mypy mypy src/kroch_chhmar
 
-#### Example 2: Typo in Input (`ដុលារ` instead of `ដុល្លារ`) — `OPEN-TEST #109`
-- **Gold (Joined)**:
-  `ខ្ញុំ | ទិញ | ក្នុង | តម្លៃ | ១ | ដុលារ | ។`
-- **`kroch-chhmar` (Mode C)** *(OOV typo `ដុលារ` fell back to 3 KCCs)*:
-  `ខ្ញុំ | ទិញ | ក្នុង | តម្លៃ | ១ | ដុ | លា | រ | ។`
+# 2. Fetch checksum-pinned raw data
+uv run kroch-chhmar fetch all
 
-#### Example 3: Unseen Foreign Transliteration (`ថេប្ល៊ិថ` = "tablet") — `OPEN-TEST #76`
-- **Gold (Joined)**:
-  `ថេប្ល៊ិថ | មិន | ត្រឹមតែ | ជា | ឧបករណ៍ | សម្រាប់ | ទស្សនា | មាតិកា | ឌីជីថល`
-- **`kroch-chhmar` (Mode C)** *(split unseen `ថេប្ល៊ិថ` into 3 KCCs)*:
-  `ថេ | ប្ល៊ិ | ថ | មិន | ត្រឹមតែ | ជា | ឧបករណ៍ | សម្រាប់ | ទស្សនា | មាតិកា | ឌីជីថល`
+# 3. Build (filters held-out sentences, deterministic)
+uv run kroch-chhmar prepare
+uv run kroch-chhmar build
 
-#### Example 4: Ambiguous Personal Name (`កូ រេនា` vs. `កូរេ`) — `OPEN-TEST #51`
-- **Gold (Joined)**:
-  `ខ្ញុំ | ឈ្មោះ | កូ | រេនា | ។`
-- **`kroch-chhmar` (Mode C)** *(matched `កូរេ` "Korea" + `នា`)*:
-  `ខ្ញុំ | ឈ្មោះ | កូរេ | នា | ។`
+# 4. Reproduce a table row as JSON
+uv run kroch-chhmar evaluate -f data/raw/khpos_open_test.pos --mode C --join-compounds --json
+uv run kroch-chhmar evaluate -f data/raw/khpos_close_test.pos --mode C --join-compounds --json
+uv run kroch-chhmar evaluate-pos -f data/raw/khpos_open_test.pos --mode C --join-compounds --json
+```
 
-#### Example 5: Fixed by Structured Token Merger (`២.៦២៥` & `...`) — `OPEN-TEST #82` & `CLOSE-TEST #522`
-- **`OPEN-TEST #82` Gold**:
-  `... | និង | ពិន័យ | ជា | ប្រាក់ | ២.៦២៥ | ដុល្លារ | អាមេរិក | ពីលើ | ទោស | បច្ចុប្បន្ន | ។`
-- **Before `merge_structured_tokens()`** *(split `២ | . | ៦២៥` and `. | . | .`)*:
-  `. | . | . | និង | ពិន័យ | ជា | ប្រាក់ | ២ | . | ៦២៥ | ដុល្លារ | អាមេរិក | ពីលើ | ទោស | បច្ចុប្បន្ន | ។`
-- **After `merge_structured_tokens()`** ✅ *(100% exact match)*:
-  `... | និង | ពិន័យ | ជា | ប្រាក់ | ២.៦២៥ | ដុល្លារ | អាមេរិក | ពីលើ | ទោស | បច្ចុប្បន្ន | ។`
+- `prepare` writes the number of skipped held-out sentences (currently 1,028).
+- `lex.csv` and `matrix.def` are byte-identical across `PYTHONHASHSEED` values (`tests/test_determinism.py`). The binary `.dic` embeds a build timestamp signature, so compare tokenization/test results rather than raw `.dic` hashes.
+- `tests/test_data_integrity.py` verifies zero exact-sentence overlap against the real khPOS files when they are present.
+- CI (`.github/workflows/build-wheel.yml`) runs Python 3.10–3.13, lint, tests, wheel/sdist builds, an isolated wheel install, and a from-wheel seed rebuild.
 
 ---
 
-### 5.3 Top Mis-Segmentations in Mode A (vs. Split Gold)
+## 7. Known Limitations
 
-In **Mode A** (`68.78%` exact sentence match, `92.06%` F1 vs. `khPOS` Split Gold), discrepancies happen in two directions inside `CompoundSplitter.resolve()`:
-
-1. **2-KCC Compounds Kept Whole by `kroch-chhmar` Mode A** (because `CompoundSplitter.resolve()` intentionally skips DP-splitting words with `<= 2` KCCs unless they have an explicit override, to prevent over-splitting base words into single KCCs):
-   - `នៅ | ក្នុង` $\to$ `នៅក្នុង` (**436×**)
-   - `ពួក | គេ` $\to$ `ពួកគេ` (**221×**)
-   - `ភ្នំ | ពេញ` $\to$ `ភ្នំពេញ` (**174×**)
-   - `ជា | ច្រើន` $\to$ `ជាច្រើន` (**168×**)
-   - `ប្រជា | ជន` $\to$ `ប្រជាជន` (**145×**)
-   - `កីឡា | ករ` $\to$ `កីឡាករ` (**143×**)
-   - `ព្រះ | អង្គ` $\to$ `ព្រះអង្គ` (**120×**)
-
-2. **Multi-KCC Words Not Marked with `_` in `khPOS` That Mode A Splits**:
-   - `ទាំងអស់` $\to$ `ទាំង | អស់` (**179×**)
-   - `នគរបាល` $\to$ `នគរ | បាល` (**112×**)
-   - `លីកាដូ` (LICADHO acronym) $\to$ `លី | កាដូ` (**103×**, because `លី` and `កាដូ` *"gift"* are in `base_vocab`)
-   - `របាយការណ៍` $\to$ `របាយ | ការណ៍` (**73×**)
-   - `ត្រូវតែ` $\to$ `ត្រូវ | តែ` (**67×**)
-   - `រូបភាព` $\to$ `រូប | ភាព` (**58×**)
+- Only khPOS is benchmarked; ALT is used for training vocabulary but not as a held-out test set.
+- No comparison against CRF/neural Khmer segmenters is included yet.
+- Mode B has no independent B-level gold standard; its scores are projections against C or A gold.
+- POS tags are lexical priors, not a trained tagger. Conditional POS accuracy is measured in §3.4, but macro F1 (~52% Mode C / ~43% Mode A) shows that rare tags remain weak.
+- `CLOSE-TEST` is a matched-distribution held-out set, not a new domain. The OPEN↔CLOSE difference is small by construction.
+- Hyperparameters (`7,200` unseen base, `500` per-KCC penalty, `600` split penalty, `220` transition scale) were calibrated in v0.1.0; no separate development split is shipped. For new domains, tune them on a dedicated dev corpus, then evaluate once on OPEN/CLOSE.
+- Tokens are evaluated after Unicode normalization; offsets refer to normalized text.

@@ -1,5 +1,7 @@
 # Kroch-Chhmar: Dictionary Generation Workflow & Segmentation Plugin Plan
 
+> **Historical planning document:** this file records the original v0.1.0 design. The current implementation, build commands, and evaluation results are documented in [`README.md`](README.md), [`Report.md`](Report.md), and [`evaluation.md`](evaluation.md). Dataset names mentioned below (Chuon Nath, Wiktionary, khmercut) are no longer part of the default pipeline.
+
 ## 1. Architecture Overview
 
 `kroch-chhmar` provides an end-to-end Python pipeline (`uv` + `pyproject.toml`) to build a **Sudachi-compatible Khmer binary dictionary** (`system_khmer.dic` & `user_khmer.dic`) and a **Khmer-aware SudachiPy tokenizer wrapper/plugin** that handles Khmer Unicode canonicalization and Khmer Character Cluster (KCC) constraints.

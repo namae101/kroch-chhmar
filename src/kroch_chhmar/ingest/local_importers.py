@@ -4,12 +4,141 @@ from __future__ import annotations
 
 import csv
 import re
+from collections.abc import Iterable
 from pathlib import Path
 
 from kroch_chhmar.dictionary.compound_splitter import CompoundSplitter, SplitResolution
 from kroch_chhmar.dictionary.cost_estimator import CostEstimator
 from kroch_chhmar.dictionary.pos_mapper import map_to_ud_pos
 from kroch_chhmar.normalizer import normalize_khmer
+
+_ZWSP = "\u200b"
+
+
+# ---------------------------------------------------------------------------
+# Holdout filtering (prevents exact test sentences from leaking into training)
+# ---------------------------------------------------------------------------
+
+
+def _strip_pos_suffix(token: str) -> str:
+    """Strip a trailing ``/POS`` annotation from a gold token."""
+    tok = token.strip()
+    if "/" in tok and len(tok) > 1 and not tok.startswith("/"):
+        tok = tok.rsplit("/", 1)[0]
+    return tok.strip()
+
+
+def sentence_surface_key(tokens: Iterable[str | tuple[str, str | None]]) -> str:
+    """
+    Build a normalization-independent key for a segmented sentence.
+
+    Compound markers (``_``/``~``), bound-suffix markers (``^``), POS suffixes
+    (``/NN``), zero-width spaces, and Unicode encoding variants are all removed
+    so that the same underlying text compares equal across corpora and gold
+    files.
+    """
+    parts: list[str] = []
+    for item in tokens:
+        raw_surface = item[0] if isinstance(item, tuple) else item
+        surface = _strip_pos_suffix(str(raw_surface)).replace("^", "")
+        for piece in re.split(r"[_~]+", surface):
+            normalized = normalize_khmer(piece)
+            if normalized:
+                parts.append(normalized)
+    return "".join(parts)
+
+
+class HoldoutFilter:
+    """
+    Exact-sentence holdout filter.
+
+    khPOS's upstream ``train.all2`` file starts with the entire ``CLOSE-TEST``
+    split, so simply skipping the ``khpos_close_test.pos`` file is not enough:
+    the same sentences are already present in the training file. This filter
+    removes any sentence whose normalized surface text matches a held-out
+    sentence *before* its tokens, compound overrides, or lexicon sub-parts are
+    committed to the estimator.
+    """
+
+    def __init__(self, keys: Iterable[str] | None = None) -> None:
+        self.keys: set[str] = set(keys or ())
+        self.loaded_sentences = 0
+        self.skipped = 0
+
+    @classmethod
+    def from_files(cls, paths: Iterable[str | Path]) -> HoldoutFilter:
+        """Load held-out sentences from space/ZWSP/pipe-delimited gold files."""
+        holdout = cls()
+        for raw_path in paths:
+            path = Path(raw_path)
+            if not path.exists():
+                continue
+            with path.open("r", encoding="utf-8") as handle:
+                for raw_line in handle:
+                    line = raw_line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    tokens = [
+                        tok
+                        for tok in line.replace(_ZWSP, " ").replace("|", " ").split()
+                        if tok.strip()
+                    ]
+                    if tokens:
+                        holdout.add_sentence(tokens)
+                        holdout.loaded_sentences += 1
+        return holdout
+
+    def add_sentence(self, tokens: Iterable[str | tuple[str, str | None]]) -> None:
+        key = sentence_surface_key(tokens)
+        if key:
+            self.keys.add(key)
+
+    def is_held_out(self, tokens: Iterable[str | tuple[str, str | None]]) -> bool:
+        key = sentence_surface_key(tokens)
+        return bool(key) and key in self.keys
+
+    def record_skip(self) -> None:
+        self.skipped += 1
+
+    def __len__(self) -> int:
+        return len(self.keys)
+
+
+# ---------------------------------------------------------------------------
+# RAC 2022 pronunciation cleaning
+# ---------------------------------------------------------------------------
+
+
+def clean_rac_pronunciation(raw: str | None) -> str | None:
+    """
+    Extract a clean pronunciation from RAC 2022 ``t_pron`` values.
+
+    RAC readings frequently look like ``[ក័ន-ដៈ-កៈ-ស័ញ-ញ៉ា] ឬ [កន់-ដក-ស័ញ-ញ៉ា]``
+    or carry trailing notes such as ``] (ជើង ត),``. The previous implementation
+    only stripped outer brackets, leaving annotation fragments in the compiled
+    dictionary's ``reading_form`` column.
+    """
+    if not raw:
+        return None
+    text = raw.strip()
+    if not text:
+        return None
+
+    bracket = re.search(r"\[([^\]]+)\]", text)
+    if bracket:
+        text = bracket.group(1)
+    else:
+        text = text.split("]", 1)[0]
+        text = text.split("(", 1)[0]
+
+    text = text.split(" ឬ ", 1)[0]
+    text = re.sub(r"\s+", " ", text).strip().strip("[]").rstrip(",;").strip()
+    return text or None
+
+
+# ---------------------------------------------------------------------------
+# Lexicon importers
+# ---------------------------------------------------------------------------
 
 
 def ingest_lexicon_tsv(
@@ -104,7 +233,7 @@ def ingest_rac_dictionary_csv(
             raw_main = (row.get("t_main") or "").strip()
             raw_sub = (row.get("t_subword") or "").strip()
             raw_pos = (row.get("t_pos") or "").strip()
-            raw_pron = (row.get("t_pron") or "").strip().strip("[]").strip()
+            raw_pron = clean_rac_pronunciation(row.get("t_pron"))
 
             if raw_main:
                 last_main = normalize_khmer(raw_main)
@@ -149,16 +278,26 @@ def ingest_rac_dictionary_csv(
     return count
 
 
+# ---------------------------------------------------------------------------
+# Corpus importers
+# ---------------------------------------------------------------------------
+
+
 def ingest_segmented_text_file(
     path: str | Path,
     estimator: CostEstimator,
     splitter: CompoundSplitter | None = None,
+    holdout: HoldoutFilter | None = None,
 ) -> int:
     """
     Ingest a pre-segmented Khmer corpus where words are separated by spaces,
     Zero-Width Spaces (`\\u200b`), or `|` delimiters, with optional `word/POS` tags.
     Also supports `ye-kyaw-thu/khPOS` compound markers (`_` and `~`), automatically
     extracting multi-granular Mode B/C compound splits when `splitter` is provided!
+
+    If `holdout` is provided, sentences whose normalized surface text matches a
+    held-out sentence are skipped **before** their sub-parts or compound
+    overrides are added to the estimator/splitter.
     Returns the number of sentences processed.
     """
     p = Path(path)
@@ -173,12 +312,14 @@ def ingest_segmented_text_file(
                 continue
 
             # Replace ZWSP and pipe delimiters with spaces
-            unified = line.replace("\u200b", " ").replace("|", " ")
+            unified = line.replace(_ZWSP, " ").replace("|", " ")
             raw_tokens = [tok.strip() for tok in unified.split() if tok.strip()]
             if not raw_tokens:
                 continue
 
             parsed_tokens: list[tuple[str, str | None]] = []
+            compound_actions: list[tuple[str, str | None, list[str]]] = []
+
             for tok in raw_tokens:
                 if "/" in tok and len(tok) > 1 and not tok.startswith("/"):
                     raw_surf, raw_pos = tok.rsplit("/", 1)
@@ -204,25 +345,35 @@ def ingest_segmented_text_file(
                         full_surf = normalize_khmer("".join(sub_parts))
                         ud_pos = map_to_ud_pos(raw_pos, full_surf)
                         parsed_tokens.append((full_surf, ud_pos))
-
-                        # Register sub-parts in base vocabulary & estimator
-                        for sp in sub_parts:
-                            estimator.add_lexicon_entry(sp, pos=None, freq=1)
-                            if splitter is not None:
-                                splitter.base_vocab.add(sp)
-
-                        if splitter is not None and full_surf not in splitter.overrides:
-                            mode = "B" if len(sub_parts) == 2 else "C"
-                            splitter.overrides[full_surf] = SplitResolution(
-                                surface=full_surf,
-                                split_type=mode,
-                                split_a=sub_parts,
-                                split_b=sub_parts if mode == "C" else [],
-                                override_pos=ud_pos,
-                            )
+                        compound_actions.append((full_surf, ud_pos, sub_parts))
                         continue
 
                 parsed_tokens.append((raw_surf, raw_pos))
+
+            if not parsed_tokens:
+                continue
+
+            # Holdout check happens before any lexicon/compound side effects.
+            if holdout is not None and holdout.is_held_out(parsed_tokens):
+                holdout.record_skip()
+                continue
+
+            # Register sub-parts in base vocabulary & estimator
+            for full_surf, action_pos, sub_parts in compound_actions:
+                for sp in sub_parts:
+                    estimator.add_lexicon_entry(sp, pos=None, freq=1)
+                    if splitter is not None:
+                        splitter.base_vocab.add(sp)
+
+                if splitter is not None and full_surf not in splitter.overrides:
+                    mode = "B" if len(sub_parts) == 2 else "C"
+                    splitter.overrides[full_surf] = SplitResolution(
+                        surface=full_surf,
+                        split_type=mode,
+                        split_a=sub_parts,
+                        split_b=sub_parts if mode == "C" else [],
+                        override_pos=action_pos,
+                    )
 
             estimator.add_segmented_sentence(parsed_tokens)
             sentences += 1
@@ -235,6 +386,7 @@ def ingest_alt_nova_files(
     tag_path: str | Path,
     estimator: CostEstimator,
     splitter: CompoundSplitter | None = None,
+    holdout: HoldoutFilter | None = None,
 ) -> int:
     """
     Ingest the NICT/NIPTICT Khmer ALT NOVA parallel `.km-tok.nova` and `.km-tag.nova` files.
@@ -251,7 +403,7 @@ def ingest_alt_nova_files(
     tag_lines = tag_p.read_text(encoding="utf-8", errors="replace").splitlines()
 
     sentences = 0
-    for tok_line, tag_line in zip(tok_lines, tag_lines):
+    for tok_line, tag_line in zip(tok_lines, tag_lines, strict=False):
         if "\t" not in tok_line or "\t" not in tag_line:
             continue
         _, tok_str = tok_line.split("\t", 1)
@@ -262,6 +414,8 @@ def ingest_alt_nova_files(
         chunks = re.findall(r"\S+\[[^\]]+\]\S+|\S+", tag_str)
 
         sentence_pairs: list[tuple[str, str | None]] = []
+        leaf_entries: set[tuple[str, str]] = set()
+        single_words: set[str] = set()
         word_idx = 0
 
         for chunk in chunks:
@@ -277,11 +431,9 @@ def ingest_alt_nova_files(
                 word_idx += k
 
                 # Register individual leaf words with their inner POS tags
-                for sw, itag in zip(sub_words, inner_tags):
+                for sw, itag in zip(sub_words, inner_tags, strict=False):
                     if sw:
-                        estimator.add_lexicon_entry(sw, pos=map_to_ud_pos(itag, sw), freq=0)
-                        if splitter is not None:
-                            splitter.base_vocab.add(sw)
+                        leaf_entries.add((sw, map_to_ud_pos(itag, sw)))
 
                 # If the bracketed phrase matches an established lexical compound in `splitter.overrides`
                 # (e.g. from khPOS or compounds.yaml), count it as a compound token in the sentence;
@@ -296,7 +448,7 @@ def ingest_alt_nova_files(
                     ud_outer = map_to_ud_pos(outer_tag, compound_surf)
                     sentence_pairs.append((compound_surf, ud_outer))
                 else:
-                    for sw, itag in zip(sub_words, inner_tags):
+                    for sw, itag in zip(sub_words, inner_tags, strict=False):
                         if sw:
                             sentence_pairs.append((sw, map_to_ud_pos(itag, sw)))
             else:
@@ -306,12 +458,26 @@ def ingest_alt_nova_files(
                 word_idx += 1
                 if w:
                     sentence_pairs.append((w, map_to_ud_pos(chunk, w)))
-                    if splitter is not None:
-                        splitter.base_vocab.add(w)
+                    single_words.add(w)
 
-        if sentence_pairs:
-            estimator.add_segmented_sentence(sentence_pairs)
-            sentences += 1
+        if not sentence_pairs:
+            continue
+
+        if holdout is not None and holdout.is_held_out(sentence_pairs):
+            holdout.record_skip()
+            continue
+
+        # Commit leaf vocabulary only after the holdout check.
+        if splitter is not None:
+            for word in sorted(single_words):
+                splitter.base_vocab.add(word)
+        for sw, tag in sorted(leaf_entries):
+            estimator.add_lexicon_entry(sw, pos=tag, freq=0)
+            if splitter is not None:
+                splitter.base_vocab.add(sw)
+
+        estimator.add_segmented_sentence(sentence_pairs)
+        sentences += 1
 
     return sentences
 
@@ -319,6 +485,7 @@ def ingest_alt_nova_files(
 def ingest_conllu_file(
     path: str | Path,
     estimator: CostEstimator,
+    holdout: HoldoutFilter | None = None,
 ) -> int:
     """
     Ingest a Universal Dependencies CoNLL-U file (`.conllu`).
@@ -332,14 +499,22 @@ def ingest_conllu_file(
     sentences = 0
     current_sentence: list[tuple[str, str | None]] = []
 
+    def _commit() -> None:
+        nonlocal sentences
+        if not current_sentence:
+            return
+        if holdout is not None and holdout.is_held_out(current_sentence):
+            holdout.record_skip()
+            return
+        estimator.add_segmented_sentence(current_sentence)
+        sentences += 1
+
     with p.open("r", encoding="utf-8") as f:
         for raw_line in f:
             line = raw_line.strip()
             if not line:
-                if current_sentence:
-                    estimator.add_segmented_sentence(current_sentence)
-                    sentences += 1
-                    current_sentence = []
+                _commit()
+                current_sentence = []
                 continue
             if line.startswith("#"):
                 continue
@@ -356,10 +531,7 @@ def ingest_conllu_file(
             if form:
                 current_sentence.append((form, upos if upos != "_" else None))
 
-    if current_sentence:
-        estimator.add_segmented_sentence(current_sentence)
-        sentences += 1
-
+    _commit()
     return sentences
 
 
@@ -367,14 +539,20 @@ def load_seed_dataset(
     estimator: CostEstimator,
     seed_dir: str | Path | None = None,
     splitter: CompoundSplitter | None = None,
+    holdout: HoldoutFilter | None = None,
 ) -> tuple[int, int]:
     """
-    Load the built-in Khmer seed lexicon and segmented corpus from `data/seed/`.
+    Load the built-in Khmer seed lexicon and segmented corpus.
     Returns `(num_lexicon_entries, num_corpus_sentences)`.
+
+    Seed files are resolved from the packaged ``resources/seed`` directory first
+    (so the CLI works from an installed wheel), then from the repository's
+    ``data/seed`` directory.
     """
     if seed_dir is None:
+        package_seed = Path(__file__).resolve().parents[1] / "resources" / "seed"
         repo_seed = Path(__file__).resolve().parents[3] / "data" / "seed"
-        seed_dir = repo_seed
+        seed_dir = package_seed if package_seed.exists() else repo_seed
 
     sdir = Path(seed_dir)
     lex_count = 0
@@ -383,8 +561,10 @@ def load_seed_dataset(
     for tsv_file in sorted(sdir.glob("*.tsv")):
         lex_count += ingest_lexicon_tsv(tsv_file, estimator)
     for txt_file in sorted(sdir.glob("*.txt")):
-        sent_count += ingest_segmented_text_file(txt_file, estimator, splitter=splitter)
+        sent_count += ingest_segmented_text_file(
+            txt_file, estimator, splitter=splitter, holdout=holdout
+        )
     for conllu_file in sorted(sdir.glob("*.conllu")):
-        sent_count += ingest_conllu_file(conllu_file, estimator)
+        sent_count += ingest_conllu_file(conllu_file, estimator, holdout=holdout)
 
     return lex_count, sent_count

@@ -8,7 +8,7 @@
 
 A reproducible Python workflow for generating **Sudachi-compatible Khmer binary dictionaries** (`system_khmer.dic` and `user_khmer.dic`) and a **Khmer Character Cluster (KCC)-aware word segmentation plugin/wrapper** for [`SudachiPy`](https://github.com/WorksApplications/sudachi.rs).
 
-Full architectural details are documented in [`plan/implementation_plan.md`](plan/implementation_plan.md), dataset ingestion and cost calibration in [`ingestion_strategy.md`](ingestion_strategy.md), custom user dictionaries in [`user_dic.md`](user_dic.md), evaluation results in [`evaluation.md`](evaluation.md), and package publishing in [`publishing.md`](publishing.md).
+Full architectural details are documented in [`plan/implementation_plan.md`](plan/implementation_plan.md), dataset ingestion and cost calibration in [`ingestion_strategy.md`](ingestion_strategy.md), custom user dictionaries in [`user_dic.md`](user_dic.md), evaluation results in [`evaluation.md`](evaluation.md), package publishing in [`publishing.md`](publishing.md), and release changes in [`CHANGELOG.md`](CHANGELOG.md).
 
 ---
 
@@ -37,8 +37,8 @@ Full architectural details are documented in [`plan/implementation_plan.md`](pla
 | `alt-km-nova` | [NICT/NIPTICT Asian Language Treebank (ALT) Khmer NOVA](https://www2.nict.go.jp/astrec-att/member/mutiyama/ALT/km-nova-181101.zip) ([Project Page](https://www2.nict.go.jp/astrec-att/member/mutiyama/ALT/index.html)) | 20,106 parallel tokenized (`data_km.km-tok.nova`) and bracketed compound POS-tagged (`data_km.km-tag.nova`) Khmer sentences | [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) |
 | `khmerlbdict` | [`silnrsi/khmerlbdict`](https://github.com/silnrsi/khmerlbdict) | SIL International Khmer LineBreaking frequency wordlists (`seafreq`, `KHSV`, `KHOV`, `DFD`, `TD`, `HC`, `places`, `names`, `villages`) | [MIT License](https://github.com/silnrsi/khmerlbdict/blob/master/LICENSE) |
 | `khmer-dictionary-44k` | [`seanghay/khmer-dictionary-44k`](https://huggingface.co/datasets/seanghay/khmer-dictionary-44k) | 41,275 entries (`RAC-Khmer-Dict-2022.csv`) from the Royal Academy of Cambodia 2022 Khmer Dictionary with headwords, subwords, POS, and pronunciation | Research / Non-Commercial Use Only |
-| `khmer-words` | [`seanghay/khmer-words`](https://github.com/seanghay/khmer-words) | Open Khmer dictionary wordlist | Open Source |
-| `khmer-nltk-dict` | [`VietHoang1512/khmer-nltk`](https://github.com/VietHoang1512/khmer-nltk) | Khmer-NLTK dictionary wordlist | MIT License |
+
+> **v0.2.0 source cleanup:** the formerly listed `khmer-words` and `khmer-nltk-dict` URLs are dead upstream and were removed from `PUBLIC_SOURCES`. All remaining downloads are SHA-256 pinned.
 
 Also incorporates the regex-free Khmer Unicode normalizer from:
 - **BetterKhmer**: [`seanghay/betterkhmer`](https://github.com/seanghay/betterkhmer) (ported from SIL Global's `khmer-normalizer`, MIT License).
@@ -50,13 +50,16 @@ Also incorporates the regex-free Khmer Unicode normalizer from:
 ### 1. Fetch Public Khmer Datasets & Build the System Dictionary
 
 ```bash
-# Download all 4 primary datasets (khpos, alt-km-nova, khmerlbdict, khmer-dictionary-44k)
+# Download all 4 primary datasets (khpos, alt-km-nova, khmerlbdict, RAC 44k; SHA-256 verified)
 uv run kroch-chhmar fetch all
 
-# Normalize with BetterKhmer, deduplicate into data/interim/, generate lex.csv + matrix.def, and compile system_khmer.dic
+# Normalize, remove held-out test sentences from training, deduplicate into data/interim/,
+# generate lex.csv + matrix.def, and compile system_khmer.dic
 uv run kroch-chhmar prepare
 uv run kroch-chhmar build
 ```
+
+`prepare` automatically treats `khpos_open_test.pos` and `khpos_close_test.pos` in `data/raw/` as holdout files and excludes any exact matching sentence from training. This is required because upstream khPOS `train.all2` starts with the entire `CLOSE-TEST` split. Builds are deterministic across Python hash seeds and dataset downloads are checksum-pinned.
 
 ### 2. Segment Khmer Text (Modes C, B, A)
 
@@ -92,11 +95,24 @@ uv run kroch-chhmar evaluate -f data/raw/khpos_open_test.pos --mode A --split-co
 
 #### Summary Evaluation Results (`OPEN-TEST` & `CLOSE-TEST`, 1,000 Sentences Each)
 
+All numbers below were regenerated for **v0.2.0** after fixing evaluation integrity: upstream khPOS `train.all2` contains the entire `CLOSE-TEST` split, so the 1,028 matching training lines are now removed before cost estimation (see [`evaluation.md` §1.3](evaluation.md)).
+
 | Dictionary Configuration | `OPEN-TEST` F1 *(Compounds Joined)* | `OPEN-TEST` F1 *(Base Words Split)* | `CLOSE-TEST` F1 *(Compounds Joined)* | `CLOSE-TEST` F1 *(Base Words Split)* | KCC Violations | Speed (1k sents) |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **`khPOS`-Aligned Dict (`Mode C` / `Mode A`)** | **98.35%** *(Mode C)* | **94.89%** *(Mode A)* | **98.24%** *(Mode C)* | **94.62%** *(Mode A)* | **0.00%** | **0.18s** |
-| **Calibrated 4-Dataset Dict (Held-Out Test)** | **94.85%** *(Mode C)* | **92.04%** *(Mode A)* | **96.25%** *(Mode C)* | **92.41%** *(Mode A)* | **0.00%** | **0.18s** |
-| **Full 14k `khPOS` Benchmark** | **95.83%** *(Mode C)* | **92.04%** *(Mode A)* | — | — | **0.00%** | **0.15s** |
+| **Calibrated 4-Dataset Dict (Held-Out Test)** | **94.66%** *(Mode C)* | **91.93%** *(Mode A)* | **94.86%** *(Mode C)* | **92.21%** *(Mode A)* | **0.00%** | **~0.28s** |
+| **Full 14k `khPOS` Corpus** *(mostly in-sample)* | **95.52%** *(Mode C)* | **92.08%** *(Mode A)* | — | — | **0.00%** | **~0.28s** |
+
+- **Exact sentence match:** `OPEN-TEST` 78.40% (Mode C) / 68.00% (Mode A); `CLOSE-TEST` 83.00% / 70.30%; full 14k corpus 82.13% / 69.07%.
+- **Boundary F1:** `OPEN-TEST` 97.79% (Mode C) / 96.90% (Mode A); `CLOSE-TEST` 97.90% / 97.03%.
+- **POS accuracy on boundary-correct tokens:** `OPEN-TEST` 75.20% (Mode C) / 61.69% (Mode A); `CLOSE-TEST` 75.86% / 62.09% (macro F1 ~52% / ~43%). This measures the shipped lexical priors, not a trained tagger.
+- **The earlier 98.35% “`khPOS`-aligned” number is a test-vocabulary upper bound, not a held-out result.** It is retained in [`evaluation.md` §3.3](evaluation.md) only to illustrate dictionary extension and should not be compared with the held-out rows above.
+- Speed is measured on Apple Silicon; run-to-run hardware variance is expected.
+
+```bash
+# Reproduce the held-out Mode C row (and emit JSON for exact/boundary metrics)
+uv run kroch-chhmar evaluate -f data/raw/khpos_open_test.pos --mode C --join-compounds --json
+```
+
 
 ### 5. Python API Usage
 
@@ -112,6 +128,8 @@ print(tokenizer.segment("ព្រះរាជាណាចក្រកម្ព�
 print(tokenizer.segment("ព្រះរាជាណាចក្រកម្ពុជាមានការសិក្សា។", mode=SplitMode.A))
 # -> ['ព្រះ', 'រាជាណាចក្រ', 'កម្ពុជា', 'មាន', 'ការ', 'សិក្សា', '។']
 ```
+
+Character offsets (`m.begin` / `m.end`) refer to `normalize_khmer(text)`, not necessarily the original string. Call `normalize_khmer(text)` first if you need to extract spans from normalized text.
 
 ### 6. Run the FastAPI Example Server & Web Playground
 
@@ -134,14 +152,26 @@ curl -X POST http://127.0.0.1:8000/tokenize \
 ### 7. Run Tests
 
 ```bash
-uv run --with pytest pytest -v
+uv run --with pytest pytest -q
+uv run --with ruff ruff check src tests example
+uv run --with mypy mypy src/kroch_chhmar
 ```
+
+---
+
+## Reproducibility & Quality Gates
+
+- **Holdout integrity:** `prepare` removes exact `OPEN-TEST` / `CLOSE-TEST` sentences from training before any token counts, compound overrides, or lexicon sub-parts are committed. Upstream khPOS `train.all2` contains the full `CLOSE-TEST` split; v0.2.0 filters 1,028 such sentences.
+- **Deterministic builds:** `prepare` produces byte-identical `lex.csv` and `matrix.def` across `PYTHONHASHSEED` values. `tests/test_determinism.py` enforces this.
+- **Pinned downloads:** every file in `fetch all` is SHA-256 verified; a changed upstream file fails loudly instead of silently altering the benchmark.
+- **Expanded metrics:** `evaluate --json` reports token P/R/F1, exact sentence match, boundary P/R/F1, OOV rate, Khmer-word OOV rate, and KCC violation rate. `evaluate-pos` reports conditional POS accuracy, coverage, and per-tag metrics.
+- **CI:** `.github/workflows/build-wheel.yml` runs tests on Python 3.10–3.13, lints, type-checks, builds the wheel/sdist, verifies an isolated wheel install, and rebuilds a dictionary from packaged seed data.
 
 ---
 
 ## Limitations & Known Considerations
 
-While `kroch-chhmar` achieves 95–98% F1 segmentation accuracy and 0.00% KCC boundary violations on standard Khmer benchmarks, users should keep in mind the following linguistic and operational considerations:
+While `kroch-chhmar` achieves roughly **94.7–95.5% F1** segmentation accuracy (depending on mode and split) and **0.00% KCC boundary violations** on khPOS benchmarks, users should keep in mind the following linguistic and operational considerations:
 
 1. **Modern Standard Khmer Focus**:
    - The dictionary and phonotactic rules are calibrated for **contemporary Standard Khmer** (aligned with the Royal Academy of Cambodia 2022 dictionary and Samdech Chuon Nath).
@@ -159,6 +189,15 @@ While `kroch-chhmar` achieves 95–98% F1 segmentation accuracy and 0.00% KCC bo
 
 5. **Upstream Data Licensing for the Pre-Compiled Dictionary**:
    - The `kroch-chhmar` Python code is 100% **MIT licensed**. However, the bundled pre-compiled `system_khmer.dic` incorporates public corpora from `khPOS` and `NICT ALT NOVA` (CC BY-NC-SA 4.0) and `RAC 2022` (Research/Non-Commercial). Commercial users with strict licensing policies should compile a dictionary using permissively licensed data (`khmerlbdict` + proprietary corpora) via `kroch-chhmar build`.
+
+6. **Mode B Granularity for DP-Derived Compounds**:
+   - Curated compounds in `configs/compounds.yaml` (and khPOS `_`/`~` annotations) carry explicit Mode B intermediates. Long compounds generated only by the KCC-constrained DP splitter currently fall back from Mode C directly to Mode A, because there is no principled intermediate B unit. `prepare` reports this ratio (currently 2 / 14,572 Mode C entries use a curated B intermediate). Mode B is therefore an intermediate output overall, but not a fully realized intermediate layer for every long compound.
+
+7. **POS Tags Are Dictionary/Heuristic, Not a Trained Tagger**:
+   - Corpus-attested words receive khPOS/ALT POS counts; RAC headwords use RAC POS labels; remaining untyped wordlist entries fall back to orthographic heuristics (most commonly `NOUN`). Conditional POS accuracy on boundary-correct tokens is about **75% in Mode C** and **61–62% in Mode A** on khPOS (`macro F1` ~52% / ~43%). Treat `ud_pos` as a useful lexical prior rather than a state-of-the-art tagger. See [`evaluation.md` §3.4](evaluation.md).
+
+8. **Character Offsets Refer to Normalized Text**:
+   - `KhmerMorpheme.begin`/`end` are offsets in `normalize_khmer(text)`. ZWSP removal, deprecated-codepoint replacement, and syllable reordering can change lengths. Call `normalize_khmer(text)` first if you need to highlight spans in the normalized string.
 
 ---
 

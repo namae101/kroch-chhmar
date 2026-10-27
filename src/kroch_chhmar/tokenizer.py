@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import enum
 import json
+import os
 import re
 import tempfile
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
-from sudachipy import Dictionary, SplitMode as SudachiSplitMode
+from sudachipy import Dictionary
+from sudachipy import SplitMode as SudachiSplitMode
+from sudachipy.errors import SudachiError
 
 from kroch_chhmar.normalizer import is_kcc_dependent_start, normalize_khmer
 
@@ -229,7 +232,7 @@ class KhmerTokenizer:
         self,
         config_path: str | Path | None = None,
         system_dic_path: str | Path | None = None,
-        user_dic_paths: list[str | Path] | None = None,
+        user_dic_paths: Sequence[str | Path] | None = None,
         default_mode: SplitMode | str = SplitMode.C,
         strip_zwsp: bool = True,
         enforce_kcc: bool = True,
@@ -243,18 +246,21 @@ class KhmerTokenizer:
         pkg_dir = Path(__file__).parent.resolve()
         bundled_res = pkg_dir / "resources"
         repo_root = pkg_dir.parents[1] if len(pkg_dir.parents) >= 2 else pkg_dir
+        repo_configs = repo_root / "configs"
+        repo_build_dic = repo_root / "data" / "build" / "system_khmer.dic"
 
-        import os
-
-        # 1. Resolve Sudachi JSON config (explicit argument -> env var -> bundled package -> repo configs)
+        # 1. Resolve Sudachi JSON config.
+        #    In a source checkout, prefer the repository config (which points at
+        #    data/build) so the Python API and CLI agree after a local rebuild.
+        #    In an installed wheel, fall back to the bundled config.
         if config_path:
             cfg_file = Path(config_path).resolve()
         elif os.environ.get("KROCH_CHHMAR_CONFIG"):
             cfg_file = Path(os.environ["KROCH_CHHMAR_CONFIG"]).resolve()
+        elif (repo_configs / "sudachi.json").exists():
+            cfg_file = (repo_configs / "sudachi.json").resolve()
         elif (bundled_res / "sudachi.json").exists():
             cfg_file = bundled_res / "sudachi.json"
-        elif (repo_root / "configs" / "sudachi.json").exists():
-            cfg_file = repo_root / "configs" / "sudachi.json"
         else:
             cfg_file = bundled_res / "sudachi.json"
 
@@ -264,21 +270,22 @@ class KhmerTokenizer:
         cfg_data = json.loads(cfg_file.read_text(encoding="utf-8"))
         cfg_dir = cfg_file.parent.resolve()
 
-        # 2. Resolve system dictionary path (explicit argument -> env var -> config path -> bundled resource -> repo build)
+        # 2. Resolve system dictionary:
+        #    explicit -> env -> config target -> local repo build -> bundled resource.
         if system_dic_path:
             sys_dic = Path(system_dic_path).resolve()
         elif os.environ.get("KROCH_CHHMAR_SYSTEM_DIC"):
             sys_dic = Path(os.environ["KROCH_CHHMAR_SYSTEM_DIC"]).resolve()
         else:
             cand_cfg = (cfg_dir / cfg_data.get("systemDict", "system_khmer.dic")).resolve()
+            cand_dev = repo_build_dic.resolve()
             cand_res = (bundled_res / "system_khmer.dic").resolve()
-            cand_dev = (repo_root / "data" / "build" / "system_khmer.dic").resolve()
             if cand_cfg.exists():
                 sys_dic = cand_cfg
+            elif cand_dev.exists() and (repo_configs / "sudachi.json").exists():
+                sys_dic = cand_dev
             elif cand_res.exists():
                 sys_dic = cand_res
-            elif cand_dev.exists():
-                sys_dic = cand_dev
             else:
                 sys_dic = cand_cfg
 
@@ -292,6 +299,10 @@ class KhmerTokenizer:
                 "Or build a fresh dictionary using:\n"
                 "  • uv run kroch-chhmar build"
             )
+
+        self.config_path = cfg_file
+        self.system_dic_path = sys_dic
+        self._temp_config_path: str | None = None
 
         cfg_data["systemDict"] = str(sys_dic)
         if "characterDefinitionFile" in cfg_data:
@@ -312,14 +323,34 @@ class KhmerTokenizer:
         if user_dic_paths:
             cfg_data["userDict"] = [str(Path(p).resolve()) for p in user_dic_paths]
 
-        self._temp_cfg = tempfile.NamedTemporaryFile(
-            mode="w", suffix=".json", encoding="utf-8", delete=False
-        )
-        json.dump(cfg_data, self._temp_cfg, ensure_ascii=False, indent=2)
-        self._temp_cfg.flush()
-        self._temp_cfg.close()
+        # Write a temporary config for SudachiPy, load it, then remove it. The
+        # previous implementation leaked one JSON file per tokenizer instance.
+        fd, temp_path = tempfile.mkstemp(prefix="kroch-chhmar-", suffix=".json")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                json.dump(cfg_data, handle, ensure_ascii=False, indent=2)
+            self._temp_config_path = temp_path
+            try:
+                self.dictionary = Dictionary(config_path=temp_path)
+            except SudachiError as exc:
+                message = str(exc)
+                if "user dictionary" in message and "not compatible" in message:
+                    raise SudachiError(
+                        "User dictionary is not compatible with the resolved system dictionary:\n"
+                        f"  {sys_dic}\n"
+                        "Sudachi user dictionaries are tied to the exact system dictionary "
+                        "they were compiled against. Rebuild the user dictionary with:\n"
+                        f"  kroch-chhmar ubuild <lexicon> --system-dic {sys_dic}\n"
+                        "or pass the matching system dictionary via system_dic_path / --system-dic."
+                    ) from exc
+                raise
+        finally:
+            try:
+                os.unlink(temp_path)
+            except OSError:
+                pass
+            self._temp_config_path = None
 
-        self.dictionary = Dictionary(config_path=self._temp_cfg.name)
         self._tokenizer = self.dictionary.tokenizer()
 
     def tokenize(
@@ -330,6 +361,12 @@ class KhmerTokenizer:
     ) -> list[KhmerMorpheme]:
         """
         Normalize and segment `text` into `KhmerMorpheme` objects.
+
+        Character offsets (`begin`/`end`) refer to the **normalized** input
+        (`normalize_khmer(text)`), not necessarily the original string: ZWSP
+        removal, deprecated-codepoint replacement, and syllable reordering can
+        change character positions. Call `normalize_khmer(text)` first if you
+        need to extract spans from the normalized text.
         """
         if not text:
             return []

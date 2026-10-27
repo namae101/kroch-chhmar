@@ -8,8 +8,10 @@ One of the biggest advantages of **`kroch-chhmar`** over static neural/CRF segme
 
 | Dictionary | File | Role | How It Is Built |
 | :--- | :--- | :--- | :--- |
-| **System Dictionary** | `data/build/system_khmer.dic` | Base ~100,000 Khmer vocabulary + `matrix.def` grammar transition rules | Built via `kroch-chhmar build` (or downloaded pre-built) |
+| **System Dictionary** | `data/build/system_khmer.dic` | Base **~87,000 entries** (82,428 unique surfaces) + `matrix.def` grammar transition rules | Built via `kroch-chhmar build` (or the bundled pre-built dictionary) |
 | **User Dictionary** | `user_khmer.dic` *(up to 14 files)* | Custom overlay vocabulary searched **alongside** `system_khmer.dic` | Built in `< 0.1s` via `kroch-chhmar ubuild` |
+
+> **Signature compatibility:** SudachiPy user dictionaries are tied to the exact system dictionary they were compiled against. A `user_khmer.dic` built against `data/build/system_khmer.dic` will be rejected by the bundled resource dictionary (and vice versa) with a “not compatible” error. Rebuild the user dictionary with `--system-dic` pointing at the same dictionary you pass to `KhmerTokenizer(system_dic_path=...)` / `kroch-chhmar tokenize --system-dic ...`.
 
 ---
 

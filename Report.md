@@ -78,10 +78,10 @@ $$P(w, p) = \frac{\text{count}(w, p) + \alpha}{N_{\text{tokens}} + \alpha \cdot 
 
 $$\text{Cost}_{\text{emit}}(w, p) = \text{clip}\!\left(\text{round}\!\big(-S \cdot \ln P(w, p)\big),\; -32000,\; 32000\right)$$
 
-In the full build ($N_{\text{tokens}} \approx 471,500$, $|V| \approx 75,900$), corpus-attested words receive costs in the range **`2,400` to `6,750`**:
+In the full build ($N_{\text{tokens}} \approx 758,000$, $|V| \approx 82,500$), corpus-attested words receive costs in the range **`1,700` to `6,650`**:
 - Very frequent grammatical words (`នៃ`, `និង`, `បាន`): **`~2,400 – 3,000`**
 - Common nouns/verbs (`ប្រទេស`, `សេដ្ឋកិច្ច`, `ធ្វើ`): **`~3,800 – 5,200`**
-- Rare corpus words ($\text{count} = 1$): **`~6,750`**
+- Rare corpus words ($\text{count} = 1$): **`~6,630`**
 
 #### 2. KCC-Length-Aware Unseen Dictionary Penalty ($\text{count}(w, p) = 0$)
 When ingesting large external headword dictionaries (`RAC 2022 44k` and `khmerlbdict 37k`), thousands of multi-word definitions and rare compounds have $\text{count}(w, p) = 0$ in the training sentences. If assigned a flat low cost, a single unattested 3-word compound entry would have a lower cost than the sum of 2 or 3 attested words ($\approx 4500 + 4500 = 9000$), causing the Viterbi decoder to greedily merge unrelated adjacent words.
@@ -132,6 +132,8 @@ Sudachi binary dictionaries require forward/backward references in columns 15 (`
 2. **Pass 1 (`Mode A` Base Entries)**: Emits all indivisible base words first (`indices 0 .. N_A - 1`) and records their 0-based row IDs in `surface_to_word_id`.
 3. **Pass 2 (`Mode B` Middle Compounds)**: Emits 2-part compounds (`indices N_A .. N_B - 1`), resolving `split_info_a` to slash-separated Pass 1 IDs (e.g., `"142/891"`), and records their row IDs.
 4. **Pass 3 (`Mode C` Long Compounds & Named Entities)**: Emits multi-part compounds (`indices N_B .. N_C - 1`), resolving `split_info_a` to `Mode A` IDs and `split_info_b` to `Mode B`/`Mode A` IDs.
+
+> **Current-build note:** only **2 of 14,572** Mode C entries have a curated Mode B intermediate. DP-derived long compounds have `split_info_b == split_info_a`, so Mode B falls back to Mode A for those entries. `kroch-chhmar prepare` reports both counts; this is a documented limitation, not a topological guarantee.
 
 ---
 
@@ -214,10 +216,19 @@ Khmer script presents several challenges that standard CJK/Latin tokenizers (`Su
 
 ## 4. Summary of Empirical Impact
 
+> **v0.2.0 note:** upstream khPOS `train.all2` contains the entire `CLOSE-TEST` split. The v0.1.0 ablation below was computed before that leak was fixed, so its CLOSE-TEST numbers are inflated. OPEN-TEST numbers remain approximately comparable (±0.2 F1). The corrected v0.2.0 held-out result is **94.66% Mode C / 91.93% Mode A on OPEN-TEST** and **94.86% / 92.21% on CLOSE-TEST**; see [`evaluation.md`](evaluation.md) for the contamination experiment and full tables.
+
 | Engineering Component / Add-On Method | Primary Effect on Segmentation | Held-Out `OPEN-TEST` Mode C F1 | Held-Out `OPEN-TEST` Mode A F1 | KCC Violation Rate |
 | :--- | :--- | :---: | :---: | :---: |
 | **Baseline Uncalibrated 4-Dataset Build** | Raw wordlist counts & `^` splits dilute NLL costs | `84.73%` | `85.93%` | `0.00%` |
 | **+ `^` Bound Suffix Normalization & 3-Stage Ingestion** | Restores lexical integrity of `-កម្ម`, `-ភាព`, `-កិច្ច` | `91.40%` | `90.15%` | `0.00%` |
 | **+ Calibrated Unseen Penalty ($7200 + 500 \cdot (\text{KCC}-1)$)** | Prevents unattested compounds from overriding corpus words | `94.82%` | `92.00%` | `0.00%` |
 | **+ Structured Span Merger (`merge_structured_tokens`)** | Fixes URLs, emails, decimals (`២.៦២៥`), times (`០៨:៣០`), `...`, `គ.ស.` | **`94.85%`** *(78.6% exact sent)* | **`92.04%`** *(67.9% exact sent)* | **`0.00%`** |
-| **Full 14,000-Sentence `khPOS` Benchmark** | **6,526 sent/s** (`2.15s` total runtime) | **`95.83%`** *(82.7% exact sent)* | **`92.04%`** *(68.8% exact sent)* | **`0.00%`** |
+| **Full 14,000-Sentence `khPOS` Benchmark (v0.1.0)** | Old timing/benchmark; CLOSE-TEST contaminated | **`95.83%`** *(82.7% exact sent)* | **`92.04%`** *(68.8% exact sent)* | **`0.00%`** |
+
+**v0.2.0 holdout-corrected results (current build):**
+
+| Configuration | OPEN-TEST C | OPEN-TEST A | CLOSE-TEST C | CLOSE-TEST A | KCC |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| Held-out 4-dataset dictionary | **94.66%** | **91.93%** | **94.86%** | **92.21%** | 0.00% |
+| Full 14k corpus (mostly in-sample) | **95.52%** | **92.08%** | — | — | 0.00% |

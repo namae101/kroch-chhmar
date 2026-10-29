@@ -13,8 +13,13 @@ The published wheel (`.whl`) bundles:
 - `kroch_chhmar/resources/unk.def` (OOV transition definitions)
 - `kroch_chhmar/resources/rewrite.def` (orthographic rewrite rules)
 - `kroch_chhmar/resources/compounds.yaml` (curated compound splits)
-- `kroch_chhmar/resources/system_khmer.dic` (87,119-entry / 82,428-surface binary system dictionary, **~3.3 MB** compressed)
-- `kroch_chhmar/resources/seed/` (packaged seed lexicon/corpus so `kroch-chhmar prepare --seed --no-raw` works from a wheel)
+- `kroch_chhmar/resources/system_khmer.dic` (35,883-entry permissive binary system dictionary built from MIT-licensed seed + `khmerlbdict`; **~2.8 MB** uncompressed)
+- `kroch_chhmar/resources/seed/` (packaged seed lexicon/corpus so `kroch-chhmar prepare --profile permissive --seed --no-raw` works from a wheel)
+
+The bundled dictionary is deliberately the **permissive** profile. The full
+research dictionary (87,119 entries, built from khPOS/ALT/RAC) is not shipped
+because those upstream datasets are non-commercial. Users who accept those
+terms can build it locally with `--profile full`.
 
 When any user runs:
 ```bash
@@ -92,12 +97,17 @@ In a source checkout, the repository config and `data/build/system_khmer.dic` ar
 
 ## 4. How to Build & Publish to PyPI
 
-### Step 1: Sync the Latest Compiled Dictionary to `resources/`
-Ensure `src/kroch_chhmar/resources/` has the latest compiled `system_khmer.dic`:
+### Step 1: Rebuild the Permissive Dictionary into `resources/`
+The bundled dictionary must be the redistributable permissive build, not the
+full research build. From a checkout with `data/raw/khmerlbdict_*.tsv` present:
 
 ```bash
-cp data/build/system_khmer.dic src/kroch_chhmar/resources/
+./scripts/rebuild_bundled.sh
 ```
+
+This runs `prepare --profile permissive --seed --raw`, compiles the `.dic`, and
+copies it to `src/kroch_chhmar/resources/system_khmer.dic`. Do **not** copy
+`data/build/system_khmer.dic` (the full research build) into the wheel.
 
 ### Step 2: Build the Wheel & Source Distribution
 ```bash
@@ -106,8 +116,8 @@ uv build
 ```
 
 This creates:
-- `dist/kroch_chhmar-0.2.0-py3-none-any.whl` (~3.3 MB)
-- `dist/kroch_chhmar-0.2.0.tar.gz` (~4.6 MB; includes `configs/`, `data/seed/`, and `example/app.py`)
+- `dist/kroch_chhmar-0.2.0-py3-none-any.whl` (~1.2 MB; contains the 2.9 MB permissive `system_khmer.dic`)
+- `dist/kroch_chhmar-0.2.0.tar.gz` (~2.6 MB; includes `configs/`, `data/seed/`, and `example/app.py`)
 
 ### Step 3: Test Install in an Isolated Environment
 Verify the built wheel runs cleanly without needing local repo files:
@@ -125,7 +135,7 @@ Then verify that the wheel can rebuild a dictionary from its **packaged** seed d
 ```bash
 BUILD_DIR=$(mktemp -d)
 uv run --isolated --with dist/kroch_chhmar-0.2.0-py3-none-any.whl kroch-chhmar prepare \
-  --seed --no-raw --no-auto-holdout \
+  --profile permissive --seed --no-raw --no-auto-holdout \
   --build-dir "$BUILD_DIR" --interim-dir "$BUILD_DIR/interim"
 uv run --isolated --with dist/kroch_chhmar-0.2.0-py3-none-any.whl kroch-chhmar build \
   --no-prepare --build-dir "$BUILD_DIR"
@@ -133,7 +143,7 @@ uv run --isolated --with dist/kroch_chhmar-0.2.0-py3-none-any.whl kroch-chhmar b
 
 The `prepare` step should report ~213 entries (seed lexicon + POS table), not 18.
 
-> **Release checklist:** run `pytest` and `ruff check`; ensure `src/kroch_chhmar/resources/system_khmer.dic` is the current clean build; confirm the sdist contains `configs/`, `data/seed/`, and `example/app.py`; and verify the isolated wheel commands above. `prepare` is deterministic (`lex.csv`/`matrix.def` byte-identical across hash seeds), so build diffs are meaningful.
+> **Release checklist:** run `pytest` (including the `regex`-based KCC reference tests) and `ruff check`; run `./scripts/rebuild_bundled.sh` so `src/kroch_chhmar/resources/system_khmer.dic` is the current permissive build; confirm the sdist contains `configs/`, `data/seed/`, and `example/app.py`; and verify the isolated wheel commands above. `prepare` is deterministic (`lex.csv`/`matrix.def` byte-identical across hash seeds), so build diffs are meaningful.
 
 ### Step 4: Publish to TestPyPI
 ```bash

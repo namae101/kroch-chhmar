@@ -146,7 +146,9 @@ def test_evaluation_benchmark_zero_kcc_violations() -> None:
     gold = load_gold_sentences(REPO_ROOT / "data" / "seed" / "seed_corpus.txt")
     report = evaluate_segmentation(tokenizer, gold, mode=SplitMode.C)
     assert report.f1 >= 0.90
-    assert report.oov_rate == 0.0
+    # The bundled permissive dictionary may leave punctuation/digits to Sudachi's
+    # OOV plugins, but it must not leave Khmer words uncovered on its own seed corpus.
+    assert report.khmer_oov_rate == 0.0
     assert report.kcc_violation_rate == 0.0
 
 

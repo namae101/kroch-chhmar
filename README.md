@@ -8,6 +8,8 @@
 
 A reproducible Python workflow for generating **Sudachi-compatible Khmer binary dictionaries** (`system_khmer.dic` and `user_khmer.dic`) and a **Khmer Character Cluster (KCC)-aware word segmentation plugin/wrapper** for [`SudachiPy`](https://github.com/WorksApplications/sudachi.rs).
 
+> **Two build profiles.** The published wheel bundles a redistributable **permissive** dictionary built from MIT-licensed seed data + SIL `khmerlbdict` (35,883 entries). The higher-scoring **full** research dictionary adds khPOS, ALT NOVA, and RAC 2022, whose upstream terms are non-commercial; it is built locally with `--profile full` and is never shipped in the wheel.
+
 Full architectural details are documented in [`plan/implementation_plan.md`](plan/implementation_plan.md), dataset ingestion and cost calibration in [`ingestion_strategy.md`](ingestion_strategy.md), custom user dictionaries in [`user_dic.md`](user_dic.md), evaluation results in [`evaluation.md`](evaluation.md), package publishing in [`publishing.md`](publishing.md), release changes in [`CHANGELOG.md`](CHANGELOG.md), and outstanding work in [`TODO.md`](TODO.md).
 
 ---
@@ -40,6 +42,8 @@ Full architectural details are documented in [`plan/implementation_plan.md`](pla
 
 > **v0.2.0 source cleanup:** the formerly listed `khmer-words` and `khmer-nltk-dict` URLs are dead upstream and were removed from `PUBLIC_SOURCES`. All remaining downloads are SHA-256 pinned.
 
+Only `khmerlbdict` and the project's own seed data are used by the bundled permissive dictionary. khPOS, ALT NOVA, and RAC 2022 are opt-in research sources for `--profile full`.
+
 Also incorporates the regex-free Khmer Unicode normalizer from:
 - **BetterKhmer**: [`seanghay/betterkhmer`](https://github.com/seanghay/betterkhmer) (ported from SIL Global's `khmer-normalizer`, MIT License).
 
@@ -47,7 +51,18 @@ Also incorporates the regex-free Khmer Unicode normalizer from:
 
 ## Quickstart
 
-### 1. Fetch Public Khmer Datasets & Build the System Dictionary
+### 1. Build a Dictionary
+
+The published wheel already includes the permissive dictionary, so `pip install kroch-chhmar` works without downloading data. To rebuild that redistributable default from source:
+
+```bash
+# MIT-licensed sources only (seed + SIL khmerlbdict)
+uv run kroch-chhmar fetch khmerlbdict
+uv run kroch-chhmar prepare --profile permissive --seed --raw
+uv run kroch-chhmar build --no-prepare
+```
+
+For the full research dictionary (khPOS/ALT/RAC; non-commercial upstream terms):
 
 ```bash
 # Download all 4 primary datasets (khpos, alt-km-nova, khmerlbdict, RAC 44k; SHA-256 verified)
@@ -55,11 +70,11 @@ uv run kroch-chhmar fetch all
 
 # Normalize, remove held-out test sentences from training, deduplicate into data/interim/,
 # generate lex.csv + matrix.def, and compile system_khmer.dic
-uv run kroch-chhmar prepare
-uv run kroch-chhmar build
+uv run kroch-chhmar prepare --profile full
+uv run kroch-chhmar build --no-prepare
 ```
 
-`prepare` automatically treats `khpos_open_test.pos` and `khpos_close_test.pos` in `data/raw/` as holdout files and excludes any exact matching sentence from training. This is required because upstream khPOS `train.all2` starts with the entire `CLOSE-TEST` split. Builds are deterministic across Python hash seeds and dataset downloads are checksum-pinned.
+`prepare --profile full` automatically treats `khpos_open_test.pos` and `khpos_close_test.pos` in `data/raw/` as holdout files and excludes any exact matching sentence from training. This is required because upstream khPOS `train.all2` starts with the entire `CLOSE-TEST` split. `--profile permissive` only auto-ingests the packaged seed and `khmerlbdict_*.tsv`; it never auto-ingests khPOS/ALT/RAC and uses the wordlist frequencies for emission costs. Builds are deterministic across Python hash seeds and dataset downloads are checksum-pinned. Maintainers can rebuild the bundled resource with [`scripts/rebuild_bundled.sh`](scripts/rebuild_bundled.sh).
 
 ### 2. Segment Khmer Text (Modes C, B, A)
 
@@ -97,14 +112,16 @@ uv run kroch-chhmar evaluate -f data/raw/khpos_open_test.pos --mode A --split-co
 
 All numbers below were regenerated for **v0.2.0** after fixing evaluation integrity: upstream khPOS `train.all2` contains the entire `CLOSE-TEST` split, so the 1,028 matching training lines are now removed before cost estimation (see [`evaluation.md` §1.3](evaluation.md)).
 
-| Dictionary Configuration | `OPEN-TEST` F1 *(Compounds Joined)* | `OPEN-TEST` F1 *(Base Words Split)* | `CLOSE-TEST` F1 *(Compounds Joined)* | `CLOSE-TEST` F1 *(Base Words Split)* | KCC Violations | Speed (1k sents) |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Calibrated 4-Dataset Dict (Held-Out Test)** | **94.66%** *(Mode C)* | **91.93%** *(Mode A)* | **94.86%** *(Mode C)* | **92.21%** *(Mode A)* | **0.00%** | **~0.28s** |
-| **Full 14k `khPOS` Corpus** *(mostly in-sample)* | **95.52%** *(Mode C)* | **92.08%** *(Mode A)* | — | — | **0.00%** | **~0.28s** |
+| Dictionary Configuration | `OPEN-TEST` F1 *(Compounds Joined)* | `OPEN-TEST` F1 *(Base Words Split)* | `CLOSE-TEST` F1 *(Compounds Joined)* | `CLOSE-TEST` F1 *(Base Words Split)* | KCC Violations |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **Bundled permissive default** (seed + `khmerlbdict`, MIT) | **77.57%** *(Mode C)* | **64.40%** *(Mode A)* | **77.15%** *(Mode C)* | **63.95%** *(Mode A)* | **0.00%** |
+| **Full research dictionary** (khPOS/ALT/RAC, local only) | **94.66%** *(Mode C)* | **91.93%** *(Mode A)* | **94.86%** *(Mode C)* | **92.21%** *(Mode A)* | **0.00%** |
+| **Full 14k `khPOS` Corpus** *(mostly in-sample)* | **95.52%** *(Mode C)* | **92.08%** *(Mode A)* | — | — | **0.00%** |
 
-- **Exact sentence match:** `OPEN-TEST` 78.40% (Mode C) / 68.00% (Mode A); `CLOSE-TEST` 83.00% / 70.30%; full 14k corpus 82.13% / 69.07%.
-- **Boundary F1:** `OPEN-TEST` 97.79% (Mode C) / 96.90% (Mode A); `CLOSE-TEST` 97.90% / 97.03%.
-- **POS accuracy on boundary-correct tokens:** `OPEN-TEST` 75.20% (Mode C) / 61.69% (Mode A); `CLOSE-TEST` 75.86% / 62.09% (macro F1 ~52% / ~43%). This measures the shipped lexical priors, not a trained tagger.
+- **The bundled permissive default is a coverage baseline, not the research result.** It has 35,883 entries and no large-scale sentence-corpus cost calibration (only the 12-sentence seed corpus); the full research build has 87,119 entries and is 17–28 F1 points stronger. Use `--profile full` when the upstream non-commercial terms are acceptable.
+- **Exact sentence match (full research build):** `OPEN-TEST` 78.40% (Mode C) / 68.00% (Mode A); `CLOSE-TEST` 83.00% / 70.30%; full 14k corpus 82.13% / 69.07%.
+- **Boundary F1 (full research build):** `OPEN-TEST` 97.79% (Mode C) / 96.90% (Mode A); `CLOSE-TEST` 97.90% / 97.03%.
+- **POS accuracy on boundary-correct tokens (full research build):** `OPEN-TEST` 75.20% (Mode C) / 61.69% (Mode A); `CLOSE-TEST` 75.86% / 62.09% (macro F1 ~52% / ~43%). This measures the shipped lexical priors, not a trained tagger.
 - **The earlier 98.35% “`khPOS`-aligned” number is a test-vocabulary upper bound, not a held-out result.** It is retained in [`evaluation.md` §3.3](evaluation.md) only to illustrate dictionary extension and should not be compared with the held-out rows above.
 - Speed is measured on Apple Silicon; run-to-run hardware variance is expected.
 
@@ -171,7 +188,7 @@ uv run --with mypy mypy src/kroch_chhmar
 
 ## Limitations & Known Considerations
 
-While `kroch-chhmar` achieves roughly **94.7–95.5% F1** segmentation accuracy (depending on mode and split) and **0.00% KCC boundary violations** on khPOS benchmarks, users should keep in mind the following linguistic and operational considerations:
+The **full research dictionary** (`--profile full`, built locally) achieves roughly **94.7–95.5% F1** segmentation accuracy (depending on mode and split) and **0.00% KCC boundary violations** on khPOS benchmarks. The **bundled permissive default** is a redistributable coverage baseline (77–78% F1 on the same held-out sets) because it cannot use the non-commercial training corpora. Users should also keep in mind the following linguistic and operational considerations:
 
 1. **Modern Standard Khmer Focus**:
    - The dictionary and phonotactic rules are calibrated for **contemporary Standard Khmer** (aligned with the Royal Academy of Cambodia 2022 dictionary and Samdech Chuon Nath).
@@ -187,8 +204,9 @@ While `kroch-chhmar` achieves roughly **94.7–95.5% F1** segmentation accuracy 
 4. **Word Segmentation vs. Sentence Boundary Detection**:
    - `kroch-chhmar` is a **word- and morpheme-level tokenizer**, not a sentence boundary disambiguator. It isolates full-stop punctuation (`។`, `៕`, `?`, `!`), but segmenting long unpunctuated Khmer paragraphs into semantic sentences requires downstream sentence-splitting logic.
 
-5. **Upstream Data Licensing for the Pre-Compiled Dictionary**:
-   - The `kroch-chhmar` Python code is 100% **MIT licensed**. However, the bundled pre-compiled `system_khmer.dic` incorporates public corpora from `khPOS` and `NICT ALT NOVA` (CC BY-NC-SA 4.0) and `RAC 2022` (Research/Non-Commercial). Commercial users with strict licensing policies should compile a dictionary using permissively licensed data (`khmerlbdict` + proprietary corpora) via `kroch-chhmar build`.
+5. **Upstream Data Licensing for the Two Dictionary Profiles**:
+   - The `kroch-chhmar` Python code is **MIT licensed**. The bundled pre-compiled `system_khmer.dic` is built only from MIT-licensed sources (project seed + `khmerlbdict`) and is redistributable.
+   - `prepare --profile full` additionally uses `khPOS` and `NICT ALT NOVA` (CC BY-NC-SA 4.0) and `RAC 2022` (Research/Non-Commercial). That build is not shipped in the wheel; commercial users should keep using `--profile permissive` plus their own proprietary or permissively licensed corpora.
 
 6. **Mode B Granularity for DP-Derived Compounds**:
    - Curated compounds in `configs/compounds.yaml` (and khPOS `_`/`~` annotations) carry explicit Mode B intermediates. Long compounds generated only by the KCC-constrained DP splitter currently fall back from Mode C directly to Mode A, because there is no principled intermediate B unit. `prepare` reports this ratio (currently 2 / 14,572 Mode C entries use a curated B intermediate). Mode B is therefore an intermediate output overall, but not a fully realized intermediate layer for every long compound.
@@ -205,7 +223,7 @@ While `kroch-chhmar` achieves roughly **94.7–95.5% F1** segmentation accuracy 
 
 The source code of `kroch-chhmar` is licensed under the **[MIT License](LICENSE)**.
 
-> **Dataset Licensing Notice**: Compiled dictionary artifacts (`.dic`, `.csv`, `matrix.def`) built using third-party datasets (`khPOS`, NICT `ALT Khmer NOVA`, `RAC Khmer Dictionary 2022`) inherit the respective terms of those upstream datasets (such as **CC BY-NC-SA 4.0** / **Research & Non-Commercial Use**). For commercial deployments, build the dictionary using only permissively licensed datasets (e.g., `khmerlbdict` + your own proprietary or permissive corpora). See [`LICENSE`](LICENSE) for full details.
+> **Dataset Licensing Notice**: The bundled permissive `system_khmer.dic` uses only MIT-licensed sources (project seed + SIL `khmerlbdict`). Dictionary artifacts built with `--profile full` (`.dic`, `.csv`, `matrix.def`) additionally incorporate `khPOS`, NICT `ALT Khmer NOVA`, and `RAC Khmer Dictionary 2022` and inherit those upstream terms (**CC BY-NC-SA 4.0** / **Research & Non-Commercial Use**). For commercial deployments, use the bundled permissive dictionary or rebuild with `--profile permissive` plus your own proprietary/permissive corpora. See [`LICENSE`](LICENSE) for full details.
 
 ---
 

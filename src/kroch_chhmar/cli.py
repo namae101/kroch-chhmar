@@ -14,6 +14,7 @@ from rich.panel import Panel
 from rich.table import Table
 from sudachipy.errors import SudachiError
 
+from kroch_chhmar.audit import OverlapReport, audit_overlap, load_audit_items
 from kroch_chhmar.dictionary.compound_splitter import CompoundSplitter
 from kroch_chhmar.dictionary.cost_estimator import CostEstimator
 from kroch_chhmar.dictionary.csv_writer import (
@@ -155,7 +156,15 @@ def cmd_prepare(
     include_raw: bool = typer.Option(
         True,
         "--raw/--no-raw",
-        help="Automatically include any downloaded files in the raw directory.",
+        help="Automatically include downloaded files in the raw directory.",
+    ),
+    profile: str = typer.Option(
+        "full",
+        "--profile",
+        help=(
+            "Data profile: `full` ingests all fetched corpora (khPOS, ALT, RAC, khmerlbdict); "
+            "`permissive` ingests only the packaged seed and `khmerlbdict_*.tsv` (MIT-compatible)."
+        ),
     ),
     raw_dir: Path = typer.Option(
         _data_dir("raw"),
@@ -197,12 +206,33 @@ def cmd_prepare(
     tokens, compound overrides, or lexicon sub-parts are committed. This is
     required because upstream khPOS `train.all2` contains the entire CLOSE-TEST
     split.
+
+    `--profile permissive` produces the redistributable default dictionary from
+    MIT-licensed sources only: the packaged seed data plus `khmerlbdict_*.tsv`.
+    `--profile full` is the research build and additionally ingests khPOS, ALT
+    NOVA, and RAC 2022, whose upstream terms are non-commercial.
     """
+    profile = profile.strip().lower()
+    if profile not in {"full", "permissive"}:
+        console.print(
+            Panel(
+                f"[bold red]Unknown profile:[/bold red] {profile}\n"
+                "Choose `full` (all fetched corpora) or `permissive` "
+                "(seed + khmerlbdict only).",
+                title="Invalid data profile",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=2)
+    permissive = profile == "permissive"
+
     estimator = CostEstimator()
     splitter = CompoundSplitter(compounds_yaml_path=compounds_yaml)
 
     holdout_paths = [Path(p) for p in (holdout or [])]
-    if auto_holdout:
+    # The permissive profile never auto-ingests khPOS/ALT, so their test files
+    # are not relevant. Explicit `--holdout` files are still honored.
+    if auto_holdout and not permissive:
         for name in ("khpos_open_test.pos", "khpos_close_test.pos"):
             candidate = raw_dir / name
             if candidate.exists() and candidate.resolve() not in {
@@ -229,14 +259,34 @@ def cmd_prepare(
             Panel(
                 f"[yellow]Raw data directory not found:[/yellow]\n{raw_dir}\n\n"
                 "Building from the packaged seed dataset and any `--lexicon` / `--corpus` "
-                "inputs. Run `kroch-chhmar fetch all` for the full 87k-entry dictionary.",
+                "inputs. Run `kroch-chhmar fetch all` for the full research dictionary, or "
+                "`kroch-chhmar fetch khmerlbdict` for the permissive default sources.",
                 title="Raw data not found",
                 border_style="yellow",
             )
         )
         include_raw = False
 
-    if include_raw:
+    if include_raw and permissive:
+        # Permissive profile: only MIT-licensed wordlists. Frequencies are kept
+        # because there is no sentence corpus to provide calibrated NLL counts.
+        permissive_files = sorted(raw_dir.glob("khmerlbdict_*.tsv"))
+        if not permissive_files:
+            console.print(
+                Panel(
+                    f"[yellow]No `khmerlbdict_*.tsv` files found in:[/yellow]\n{raw_dir}\n\n"
+                    "The permissive profile will use the packaged seed data only. Run "
+                    "`kroch-chhmar fetch khmerlbdict` to add the MIT-licensed wordlists.",
+                    title="Permissive raw data not found",
+                    border_style="yellow",
+                )
+            )
+        for f in permissive_files:
+            c = ingest_lexicon_tsv(f, estimator, use_frequencies=True)
+            console.print(
+                f"[green]Loaded permissive wordlist {f.name}:[/green] {c} entries"
+            )
+    elif include_raw:
         # 1. Ingest segmented corpora (.pos, .txt, .conllu) first so `splitter.overrides`
         #    captures canonical compound structures before NICT ALT NOVA and RAC 2022.
         for f in sorted(raw_dir.glob("*")):
@@ -286,7 +336,7 @@ def cmd_prepare(
                 console.print(f"[green]Loaded raw lexicon {f.name}:[/green] {c} entries")
 
     for lex_path in lexicon or []:
-        c = ingest_lexicon_tsv(lex_path, estimator)
+        c = ingest_lexicon_tsv(lex_path, estimator, use_frequencies=permissive)
         console.print(f"[green]Ingested lexicon {lex_path}:[/green] {c} entries")
 
     for corp_path in corpus or []:
@@ -298,23 +348,39 @@ def cmd_prepare(
             )
         console.print(f"[green]Ingested corpus {corp_path}:[/green] {c} sentences")
 
+    console.print(f"[bold cyan]Data profile:[/bold cyan] {profile}")
+    if permissive:
+        console.print(
+            "[green]Permissive profile:[/green] auto-ingested sources are limited to the "
+            "packaged seed and `khmerlbdict_*.tsv`; khPOS/ALT/RAC were not ingested."
+        )
     if holdout_filter is not None:
         console.print(
             f"[green]Holdout integrity:[/green] {len(holdout_filter)} unique held-out sentences "
             f"loaded; skipped from training: [bold]{holdout_filter.skipped}[/bold]"
         )
-    else:
+    elif not permissive:
         console.print(
             "[yellow]Warning:[/yellow] no holdout files found; evaluation may be in-sample."
         )
 
     if estimator.stats.raw_lexicon_rows == 0 and estimator.stats.dedup_sentences == 0:
+        if permissive:
+            hint = (
+                "The permissive profile needs at least one of: the packaged seed "
+                "(`--seed`), `khmerlbdict_*.tsv` in `--raw-dir`, or an explicit "
+                "`--lexicon` / `--corpus` file."
+            )
+        else:
+            hint = (
+                "Run `kroch-chhmar fetch all` first, or pass `--lexicon` / "
+                "`--corpus` files."
+            )
         console.print(
             Panel(
                 "[bold red]No lexicon or corpus data was ingested.[/bold red]\n\n"
                 "The build would contain only POS-table placeholders and cannot tokenize "
-                "Khmer text. Run `kroch-chhmar fetch all` first, or pass `--lexicon` / "
-                "`--corpus` files.",
+                f"Khmer text. {hint}",
                 title="Refusing to build an empty dictionary",
                 border_style="red",
             )
@@ -400,6 +466,14 @@ def cmd_build(
         "--prepare/--no-prepare",
         help="Automatically run `prepare` if `lex.csv` or `matrix.def` is missing.",
     ),
+    profile: str = typer.Option(
+        "full",
+        "--profile",
+        help=(
+            "Data profile used by the automatic `prepare` step: `full` (all fetched corpora) "
+            "or `permissive` (packaged seed + `khmerlbdict_*.tsv` only)."
+        ),
+    ),
 ) -> None:
     """Compile `lex.csv` and `matrix.def` into a binary `system_khmer.dic` via `sudachipy build`."""
     csv_path = build_dir / "lex.csv"
@@ -412,6 +486,7 @@ def cmd_build(
             corpus=None,
             include_seed=True,
             include_raw=True,
+            profile=profile,
             raw_dir=_data_dir("raw"),
             holdout=None,
             auto_holdout=True,
@@ -432,11 +507,11 @@ def _print_missing_system_dic_message(missing_path: Path | str) -> None:
             f"[bold red]System dictionary (`system_khmer.dic`) was not found at:[/bold red]\n"
             f"  [yellow]{missing_path}[/yellow]\n\n"
             f"[bold]You need to build `system_khmer.dic` before running this command:[/bold]\n"
-            f"  1. [cyan]Quick build (built-in seed dataset):[/cyan]\n"
-            f"     [bold green]uv run kroch-chhmar build[/bold green]\n\n"
-            f"  2. [cyan]Full dictionary build (all public datasets):[/cyan]\n"
+            f"  1. [cyan]Quick permissive build (seed + MIT wordlists):[/cyan]\n"
+            f"     [bold green]uv run kroch-chhmar build --profile permissive[/bold green]\n\n"
+            f"  2. [cyan]Full research build (all public datasets):[/cyan]\n"
             f"     [bold green]uv run kroch-chhmar fetch all[/bold green]\n"
-            f"     [bold green]uv run kroch-chhmar prepare[/bold green]\n"
+            f"     [bold green]uv run kroch-chhmar prepare --profile full[/bold green]\n"
             f"     [bold green]uv run kroch-chhmar build[/bold green]\n\n"
             f"  3. [cyan]Or pass a custom dictionary path:[/cyan]\n"
             f"     [bold green]--system-dic /path/to/system_khmer.dic[/bold green]",
@@ -754,6 +829,124 @@ def cmd_evaluate_pos(
             f"{metrics['f1']:.2%}",
         )
     console.print(per_tag)
+
+
+@app.command("audit-overlap")
+def cmd_audit_overlap(
+    left: Path = typer.Argument(
+        ...,
+        help="Left corpus/lexicon file (or the only file for an internal duplicate audit).",
+    ),
+    right: Path | None = typer.Argument(
+        None,
+        help="Right corpus/lexicon file. Omit to audit `left` against itself.",
+    ),
+    left_kind: str = typer.Option(
+        "auto",
+        "--left-kind",
+        help="Input kind for `left`: auto, sentences, or lexicon.",
+    ),
+    right_kind: str = typer.Option(
+        "auto",
+        "--right-kind",
+        help="Input kind for `right`: auto, sentences, or lexicon.",
+    ),
+    threshold: float = typer.Option(
+        0.8,
+        "--threshold",
+        min=0.0,
+        max=1.0,
+        help="Minimum estimated Jaccard similarity for a near-duplicate pair.",
+    ),
+    near: bool = typer.Option(
+        True,
+        "--near/--no-near",
+        help="Enable MinHash/LSH near-duplicate detection (exact matching always runs).",
+    ),
+    max_examples: int = typer.Option(
+        10,
+        "--max-examples",
+        min=1,
+        help="Maximum number of example pairs/groups to print.",
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Emit the audit report as JSON."),
+) -> None:
+    """
+    Audit exact and near-duplicate overlap between corpora or lexicons.
+
+    Sentence inputs are normalized (ZWSP/pipe separators, POS suffixes, and
+    compound markers removed) before comparison. `.tsv`/`.csv` inputs are
+    treated as lexicons; RAC's `t_main`/`t_subword` columns are recognized.
+    Near-duplicate candidates use a 64-value MinHash signature with 16x4
+    banded LSH and are verified by signature Jaccard.
+    """
+    try:
+        left_items = load_audit_items(left, left_kind)
+        right_items = load_audit_items(right, right_kind) if right is not None else None
+    except (FileNotFoundError, ValueError) as exc:
+        console.print(Panel(str(exc), title="Overlap audit failed", border_style="red"))
+        raise typer.Exit(code=1) from exc
+
+    report: OverlapReport = audit_overlap(
+        left_items,
+        right_items,
+        threshold=threshold,
+        near=near,
+        max_examples=max_examples,
+    )
+
+    if as_json:
+        console.print_json(json.dumps(asdict(report), ensure_ascii=False))
+        return
+
+    summary = Table(title="Overlap Audit")
+    summary.add_column("Metric", style="bold")
+    summary.add_column("Value", justify="right", style="cyan")
+    summary.add_row("Mode", report.mode)
+    summary.add_row("Left items / unique", f"{report.left_items:,} / {report.left_unique:,}")
+    summary.add_row("Right items / unique", f"{report.right_items:,} / {report.right_unique:,}")
+    summary.add_row("Exact pairs", f"{report.exact_pairs:,}")
+    summary.add_row(
+        "Near-duplicate pairs",
+        f"{report.near_pairs:,} (Jaccard >= {report.threshold:.2f})"
+        if report.near_enabled
+        else "disabled",
+    )
+    summary.add_row(
+        "Left duplicate groups / items",
+        f"{report.left_duplicate_groups:,} / {report.left_duplicate_items:,}",
+    )
+    summary.add_row(
+        "Right duplicate groups / items",
+        f"{report.right_duplicate_groups:,} / {report.right_duplicate_items:,}",
+    )
+    console.print(summary)
+
+    if report.examples:
+        examples = Table(title="Examples")
+        examples.add_column("Kind", style="bold")
+        examples.add_column("Jaccard", justify="right")
+        examples.add_column("Left")
+        examples.add_column("Right")
+        for example in report.examples:
+            examples.add_row(
+                example.kind,
+                f"{example.jaccard:.3f}",
+                example.left,
+                example.right,
+            )
+        console.print(examples)
+
+    if report.exact_pairs or report.near_pairs:
+        console.print(
+            Panel(
+                f"[yellow]Overlap detected:[/yellow] {report.exact_pairs:,} exact pair(s), "
+                f"{report.near_pairs:,} near-duplicate pair(s). Review before using these "
+                "collections as independent train/test splits.",
+                title="Train/test contamination risk",
+                border_style="yellow",
+            )
+        )
 
 
 if __name__ == "__main__":

@@ -146,6 +146,7 @@ def ingest_lexicon_tsv(
     estimator: CostEstimator,
     delimiter: str | None = None,
     default_pos: str | None = None,
+    use_frequencies: bool = False,
 ) -> int:
     """
     Ingest a lexicon file (TSV, CSV, or plain 1-word-per-line wordlist).
@@ -154,6 +155,11 @@ def ingest_lexicon_tsv(
       - 2 columns: `surface`, `pos` (or `surface`, `freq` if 2nd column is numeric, as in `khmerlbdict`)
       - 3+ columns: `surface`, `pos`, `freq`, `[reading]`
     Returns the number of entries ingested.
+
+    `use_frequencies=True` keeps raw wordlist counts (e.g. `khmerlbdict`) as
+    emission-cost evidence. This is intended for the permissive, corpus-free
+    dictionary profile; the default full profile deliberately zeroes those
+    uncalibrated counts so they cannot dilute sentence-corpus NLL probabilities.
     """
     p = Path(path)
     if not p.exists():
@@ -168,8 +174,9 @@ def ingest_lexicon_tsv(
         default_pos = "PROPN"
 
     # Uncalibrated raw counts in `khmerlbdict_*` (e.g. 6.4M counts in seafreq) should not be
-    # added directly into sentence-corpus NLL probabilities
-    ignore_numeric_freq = stem.startswith("khmerlbdict_")
+    # added directly into sentence-corpus NLL probabilities unless the caller explicitly
+    # requests a wordlist-only (permissive) build.
+    ignore_numeric_freq = stem.startswith("khmerlbdict_") and not use_frequencies
 
     count = 0
     with p.open("r", encoding="utf-8") as f:

@@ -4,6 +4,8 @@ This document explains how to run the Khmer word-segmentation evaluation suite i
 
 > **v0.2.0 correction:** upstream khPOS `train.all2` *contains the entire `CLOSE-TEST` split*. Earlier versions skipped the separate `khpos_close_test.pos` file but still ingested those sentences through `train.all2`, inflating the CLOSE-TEST score. `prepare` now removes exact held-out sentences before any counts are committed. See §1.3 for the contamination experiment and corrected numbers.
 
+> **Bundled default vs research build:** the wheel ships a **permissive** dictionary built from MIT-licensed seed data + `khmerlbdict` only (35,883 entries). The 94–95% results in §3.1 are the **full research build** (`prepare --profile full`), which uses khPOS/ALT/RAC and is not redistributable. §3.5 reports the bundled default's lower baseline so the two are not confused.
+
 ---
 
 ## 1. How to Run the Evaluation
@@ -12,11 +14,19 @@ This document explains how to run the Khmer word-segmentation evaluation suite i
 
 ```bash
 uv run kroch-chhmar fetch all
-uv run kroch-chhmar prepare
-uv run kroch-chhmar build
+uv run kroch-chhmar prepare --profile full
+uv run kroch-chhmar build --no-prepare
 ```
 
-`prepare` automatically treats `data/raw/khpos_open_test.pos` and `data/raw/khpos_close_test.pos` as holdout files. Pass extra holdout files with `--holdout path/to/gold.pos`, or disable auto-detection with `--no-auto-holdout`. The build log reports how many sentences were skipped (currently **1,028**).
+`prepare --profile full` automatically treats `data/raw/khpos_open_test.pos` and `data/raw/khpos_close_test.pos` as holdout files. Pass extra holdout files with `--holdout path/to/gold.pos`, or disable auto-detection with `--no-auto-holdout`. The build log reports how many sentences were skipped (currently **1,028**).
+
+To reproduce the redistributable bundled default instead:
+
+```bash
+uv run kroch-chhmar fetch khmerlbdict
+uv run kroch-chhmar prepare --profile permissive --seed --raw
+uv run kroch-chhmar build --no-prepare
+```
 
 ### 1.2 Run the CLI evaluator
 
@@ -67,7 +77,7 @@ Removing the test sentences costs ~1.0 F1 point beyond the effect of removing th
 ### 2.1 Evaluation datasets
 
 - **`CLOSE-TEST`** (1,000 sentences, 10,397 compound tokens / 12,467 base tokens): upstream this is the first 1,000 lines of `train.all2`. After v0.2.0 filtering it is a matched-distribution held-out set (same domain and annotation style as training), **not** an unseen-domain set.
-- **`OPEN-TEST`** (1,000 sentences, 10,778 compound tokens / 12,931 base tokens): open-vocabulary news, rare loanwords (`ថេប្ល៊ិថ` *“tablet”*, `ខាល័រ` *“color”*), and personal names. 11 OPEN-TEST sentences also occur verbatim in `train.all2`; the holdout filter removes them.
+- **`OPEN-TEST`** (1,000 sentences, 10,778 compound tokens / 12,931 base tokens): open-vocabulary news, rare loanwords (`ថេប្ល៊ិថ` *“tablet”*, `ខាល័រ` *“color”*), and personal names. 15 OPEN-TEST normalized keys also occur in `train.all2`; the exact holdout filter removes them. A separate audit finds 90 additional near-duplicate pairs at Jaccard ≥ 0.8; see [`data_audit.md`](data_audit.md).
 
 ### 2.2 What each metric measures
 
@@ -79,7 +89,7 @@ The evaluator concatenates the gold tokens of each sentence into a raw unsegment
 4. **`Boundary F1`**: precision/recall over internal character boundaries (ignoring token identity). This is the standard segmentation metric when token labels may differ but boundaries agree.
 5. **`OOV Rate`**: fraction of predicted tokens produced by Sudachi's OOV fallback. Most OOV tokens are Khmer/ASCII digits and punctuation.
 6. **`Khmer-Word OOV`**: OOV tokens containing Khmer consonants/vowels/signs (excluding digits and punctuation). This isolates genuine lexical gaps such as unseen loanwords and typos.
-7. **`KCC Boundary Violation Rate`**: fraction of predicted boundaries that split a Khmer Character Cluster. The tokenizer enforces this invariant in post-processing, so it should remain `0.00%`; it is a correctness guarantee rather than an independent quality score.
+7. **`KCC Boundary Violation Rate`**: fraction of predicted boundaries that split a Khmer Character Cluster. The tokenizer enforces this invariant in post-processing, so it should remain `0.00%`; it is a correctness guarantee rather than an independent quality score. §4.8 adds an independent UAX #29 grapheme-cluster check with the third-party `regex` module.
 
 Gold annotations: `^` bound-suffix markers are always joined (`សេដ្ឋ^កិច្ច` → `សេដ្ឋកិច្ច`); `_`/`~` compounds are joined under `--join-compounds` and split under `--split-compounds`.
 
@@ -147,6 +157,17 @@ For a legitimate domain-adaptation measurement, extend the dictionary with a **s
 
 These numbers reflect the dictionary/heuristic POS priors described in the README: frequent corpus words are usually correct, while rare words and Mode A sub-tokens (which inherit a parent tag or a heuristic `NOUN` default) are much weaker. Macro F1 is low because several UD tags are rare. This is **not** a trained POS tagger benchmark; it is a diagnostic of the lexical priors shipped with the dictionary.
 
+### 3.5 Bundled permissive default (redistributable)
+
+The wheel cannot ship the full research dictionary because khPOS/ALT are CC BY-NC-SA 4.0 and RAC 2022 is research/non-commercial. The bundled default is built with `prepare --profile permissive` from MIT-licensed seed data + `khmerlbdict` only (35,883 entries). Its held-out scores are substantially lower because it has no large-scale sentence-corpus cost calibration (only the 12-sentence seed corpus) and no khPOS/ALT compounds:
+
+| Configuration | OPEN C | OPEN A | CLOSE C | CLOSE A | KCC |
+| :--- | ---: | ---: | ---: | ---: | ---: |
+| **Bundled permissive** (seed + `khmerlbdict`) | **77.57%** | **64.40%** | **77.15%** | **63.95%** | 0.00% |
+| Full research (khPOS/ALT/RAC, local only) | 94.66% | 91.93% | 94.86% | 92.21% | 0.00% |
+
+The permissive default's Khmer-word OOV rate is 3.26% (OPEN) / 3.53% (CLOSE), versus 0.10% / 0.09% for the full build. Exact sentence match is 39.20% / 16.00% (OPEN C/A) and 39.60% / 15.90% (CLOSE C/A); boundary F1 is 90.78% / 85.85% and 90.66% / 85.80%. These numbers are a **coverage baseline**, not the research result. Users who accept the upstream non-commercial terms should build `--profile full`.
+
 ---
 
 ## 4. Discussion & Analysis
@@ -156,8 +177,33 @@ These numbers reflect the dictionary/heuristic POS priors described in the READM
 3. **OOV is mostly non-lexical:** 2.75% of OPEN tokens are OOV, but only **11** contain Khmer letters (0.10%). The rest are digits and punctuation intentionally left to OOV handling.
 4. **Dictionary extension still has clear value:** adding domain terms through `kroch-chhmar ubuild` is fast and removes lexical OOVs. The 98.35% upper bound shows the ceiling when the test vocabulary is known, not what to expect on unseen text.
 5. **Mode B is not a complete intermediate layer:** only **2 of 14,572** Mode C entries use a curated Mode B intermediate. DP-derived long compounds split directly from C to A. The `prepare` log reports this ratio. A future version could construct B intermediates systematically, but arbitrary groupings would not be linguistically grounded.
-6. **POS tags are lexical priors:** corpus-attested words use khPOS/ALT counts, RAC headwords use RAC labels, and untyped wordlists fall back to heuristics (59,043 of 87,119 rows are `NOUN`). No POS-accuracy benchmark is claimed.
+6. **POS tags are lexical priors:** in the full build, corpus-attested words use khPOS/ALT counts, RAC headwords use RAC labels, and untyped wordlists fall back to heuristics (59,043 of 87,119 rows are `NOUN`). No POS-accuracy benchmark is claimed.
 7. **KCC guarantees hold:** 0.00% violations across all 14,000 sentences and all modes, enforced by `char.def` flags plus `enforce_kcc_boundaries`.
+8. **KCC is independently validated:** `tests/test_kcc_reference.py` compares `iter_kccs()` with the `regex` module's UAX #29 `\X` grapheme clusters on a hand-audited fixture, on tokenizer output spans, and on all 14,000 normalized khPOS sentences. The comparison is exact (0 disagreements) after `normalize_khmer()`; malformed coeng-after-vowel input must be normalized first. This turns the 0.00% self-check into an external-reference check. See §4.8.
+
+### 4.8 Independent KCC reference check
+
+The tokenizer's 0.00% KCC violation metric is measured with the same
+`iter_kccs()` engine that `enforce_kcc_boundaries()` uses, so it is a
+self-consistency check. The reference test adds an external implementation:
+
+- **Reference:** `regex.findall(r"\X", text)` (UAX #29 extended grapheme clusters).
+- **Hand-audited fixture:** `ខ្មែរ`, `ស្រី`, `ក្សត្រិយ៍`, `ព្រះរាជាណាចក្រ`,
+  `ការសិក្សា`, `កណ្តាល`, `សន្តិភាព`, and `២.៦២៥`.
+- **Tokenizer output:** every token `begin`/`end` in Modes A/B/C must land on a
+  reference grapheme-cluster boundary.
+- **Full corpus:** all normalized khPOS OPEN/CLOSE/TRAIN sentences compare
+  cluster-for-cluster with `\X`.
+
+Result: **0 disagreements** across 25,844 OPEN clusters, 25,126 CLOSE clusters,
+and 312,327 TRAIN clusters after normalization. Before normalization, malformed
+sequences such as `ទេ្ទ` (vowel before coeng) disagree because `\X` treats the
+coeng as a separate cluster; `normalize_khmer("ទេ្ទ") == "ទ្ទេ"` resolves the
+ordering and both engines then agree. Run the check with:
+
+```bash
+uv run --with pytest --with regex pytest -q tests/test_kcc_reference.py
+```
 
 ---
 
@@ -285,34 +331,40 @@ Mode A keeps 2-KCC words whole unless an explicit override exists, which causes 
 ## 6. Reproducibility Checklist
 
 ```bash
-# 1. Install and run the test suite (37 tests)
-uv run --with pytest pytest -q
+# 1. Install and run the test suite (63 tests, including the regex KCC reference)
+uv run --with pytest --with regex pytest -q
 uv run --with ruff ruff check src tests example
 uv run --with mypy mypy src/kroch_chhmar
 
 # 2. Fetch checksum-pinned raw data
 uv run kroch-chhmar fetch all
 
-# 3. Build (filters held-out sentences, deterministic)
-uv run kroch-chhmar prepare
-uv run kroch-chhmar build
+# 3. Build the full research dictionary (filters held-out sentences, deterministic)
+uv run kroch-chhmar prepare --profile full
+uv run kroch-chhmar build --no-prepare
 
 # 4. Reproduce a table row as JSON
 uv run kroch-chhmar evaluate -f data/raw/khpos_open_test.pos --mode C --join-compounds --json
 uv run kroch-chhmar evaluate -f data/raw/khpos_close_test.pos --mode C --join-compounds --json
 uv run kroch-chhmar evaluate-pos -f data/raw/khpos_open_test.pos --mode C --join-compounds --json
+
+# 5. Audit corpus overlap (see data_audit.md)
+uv run kroch-chhmar audit-overlap data/raw/khpos_train.pos data/raw/khpos_open_test.pos --json
+uv run kroch-chhmar audit-overlap data/raw/khpos_train.pos data/raw/data_km.km-tok.nova --json
 ```
 
-- `prepare` writes the number of skipped held-out sentences (currently 1,028).
+- `prepare --profile full` writes the number of skipped held-out sentences (currently 1,028).
 - `lex.csv` and `matrix.def` are byte-identical across `PYTHONHASHSEED` values (`tests/test_determinism.py`). The binary `.dic` embeds a build timestamp signature, so compare tokenization/test results rather than raw `.dic` hashes.
-- `tests/test_data_integrity.py` verifies zero exact-sentence overlap against the real khPOS files when they are present.
-- CI (`.github/workflows/build-wheel.yml`) runs Python 3.10–3.13, lint, tests, wheel/sdist builds, an isolated wheel install, and a from-wheel seed rebuild.
+- `tests/test_data_integrity.py` verifies zero exact-sentence overlap against the real khPOS files when they are present; `data_audit.md` records the broader exact/near-duplicate audit.
+- CI (`.github/workflows/build-wheel.yml`) runs Python 3.10–3.13, lint, tests (with `regex`), wheel/sdist builds, an isolated wheel install, and a from-wheel permissive seed rebuild.
 
 ---
 
 ## 7. Known Limitations
 
 - Only khPOS is benchmarked; ALT is used for training vocabulary but not as a held-out test set.
+- The bundled default is the permissive profile (77–78% F1 on khPOS), not the 94–95% full research build. Do not cite the full-build numbers for the wheel.
+- khPOS still has 90 near-duplicate OPEN-TEST/training pairs at Jaccard ≥ 0.8; the exact holdout filter does not remove them. See [`data_audit.md`](data_audit.md).
 - No comparison against CRF/neural Khmer segmenters is included yet.
 - Mode B has no independent B-level gold standard; its scores are projections against C or A gold.
 - POS tags are lexical priors, not a trained tagger. Conditional POS accuracy is measured in §3.4, but macro F1 (~52% Mode C / ~43% Mode A) shows that rare tags remain weak.

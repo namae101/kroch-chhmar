@@ -38,6 +38,8 @@ dev = [
     "pytest>=8.0.0",
     "ruff>=0.6.0",
     "mypy>=1.10",
+    # Independent UAX #29 grapheme-cluster reference for KCC validation tests.
+    "regex>=2024.0.0",
 ]
 example = [
     "fastapi>=0.110",
@@ -56,6 +58,7 @@ include = [
     "data/seed",
     "configs",
     "example",
+    "scripts",
     "assets",
     "README.md",
     "LICENSE",

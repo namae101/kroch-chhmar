@@ -2,6 +2,14 @@
 
 ## 0.2.0 — 2026-10-27
 
+### Licensing & data profiles (breaking for the bundled dictionary)
+
+- The wheel now bundles a **permissive** `system_khmer.dic` built only from MIT-licensed sources: the project seed data + SIL `khmerlbdict`. It has 35,883 entries and is redistributable; the previous 87,119-entry research dictionary used khPOS/ALT (CC BY-NC-SA 4.0) and RAC 2022 (research/non-commercial).
+- Added `prepare --profile {full,permissive}`. `permissive` auto-ingests only `khmerlbdict_*.tsv`, keeps wordlist frequencies for emission costs, and never auto-ingests khPOS/ALT/RAC. `full` preserves the previous research pipeline.
+- Added `scripts/rebuild_bundled.sh` and updated `LICENSE`, `README.md`, and `publishing.md` to separate the redistributable default from the local research build.
+- Added `kroch-chhmar audit-overlap` for exact + normalized + MinHash/LSH near-duplicate corpus and lexicon audits.
+- Added independent KCC validation against the `regex` module's UAX #29 grapheme clusters (`tests/test_kcc_reference.py`), including a hand-audited fixture and a full khPOS corpus check.
+
 ### Evaluation integrity (breaking for reported numbers)
 
 - **Fixed CLOSE-TEST leakage.** Upstream khPOS `train.all2` contains the entire 1,000-line `CLOSE-TEST` split. `prepare` now applies an exact-sentence `HoldoutFilter` before committing token counts, compound overrides, or lexicon sub-parts (1,028 training lines skipped in the standard build).

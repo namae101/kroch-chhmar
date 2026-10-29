@@ -45,7 +45,7 @@ jobs:
         run: uv run --with mypy mypy src/kroch_chhmar
 
       - name: Run test suite
-        run: uv run --with pytest pytest -q
+        run: uv run --with pytest --with regex pytest -q
 
   build:
     name: Build & Verify Wheel
@@ -80,8 +80,11 @@ jobs:
           uv run --isolated --with dist/kroch_chhmar-*.whl python -c "
           from kroch_chhmar import KhmerTokenizer, SplitMode
           tok = KhmerTokenizer()
-          res = tok.segment('ព្រះរាជាណាចក្រកម្ពុជាមានសន្តិភាព', mode=SplitMode.C)
+          text = 'ព្រះរាជាណាចក្រកម្ពុជាមានសន្តិភាព'
+          res = tok.segment(text, mode=SplitMode.C)
           print('Segmented tokens:', res)
+          assert res
+          assert ''.join(res) == text
           assert 'ព្រះរាជាណាចក្រកម្ពុជា' in res
           "
 
@@ -89,10 +92,11 @@ jobs:
         run: |
           BUILD_DIR="$RUNNER_TEMP/wheel-build"
           uv run --isolated --with dist/kroch_chhmar-*.whl kroch-chhmar prepare \
-            --seed --no-raw --no-auto-holdout \
+            --profile permissive --seed --no-raw --no-auto-holdout \
             --build-dir "$BUILD_DIR" \
             --interim-dir "$RUNNER_TEMP/wheel-interim" > "$RUNNER_TEMP/prepare.log"
           cat "$RUNNER_TEMP/prepare.log"
+          grep -q "Data profile:.*permissive" "$RUNNER_TEMP/prepare.log"
           uv run --isolated --with dist/kroch_chhmar-*.whl kroch-chhmar build \
             --no-prepare --build-dir "$BUILD_DIR"
           uv run --isolated --with dist/kroch_chhmar-*.whl kroch-chhmar tokenize "ភាសាខ្មែរ" \

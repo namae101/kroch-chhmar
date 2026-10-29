@@ -198,14 +198,27 @@ class CostEstimator:
                     if canon not in self.stats.reading_forms:
                         self.stats.reading_forms[canon] = self.get_canonical_form(rd)
 
-        # 1. Merge untyped words (from frequency lists like khmerlbdict) into existing POS tags
-        # without adding raw unsegmented wordlist counts into total_corpus_tokens (which would
-        # dilute sentence-corpus NLL probabilities).
-        for norm, _freq in list(self.stats.untyped_words.items()):
+        # 1. Merge untyped words (from frequency lists like khmerlbdict) into existing POS tags.
+        #    `ingest_lexicon_tsv(use_frequencies=False)` deliberately zeroes the raw counts for
+        #    the full research profile, so this branch is then only a vocabulary merge. The
+        #    permissive profile keeps the counts and propagates them as emission-cost evidence;
+        #    without this, a wordlist-only build would have flat costs for every word.
+        for norm, freq in list(self.stats.untyped_words.items()):
             existing_tags = self.stats.lexicon_words.get(norm)
-            if not existing_tags:
+            if existing_tags:
+                # Attach an untyped count to the word's dominant known POS.
+                ud_pos = max(
+                    existing_tags,
+                    key=lambda tag: (self.stats.word_pos_counts.get((norm, tag), 0), tag),
+                )
+            else:
                 ud_pos = map_to_ud_pos(None, norm)
                 self.stats.lexicon_words[norm].add(ud_pos)
+
+            if freq > 0:
+                self.stats.word_pos_counts[(norm, ud_pos)] += freq
+                self.stats.pos_counts[ud_pos] += freq
+                self.stats.total_corpus_tokens += freq
         self.stats.untyped_words.clear()
 
         # 2. Prune noisy minority POS tags from corpus tagging errors (keep tags with >= 10% share or explicit dictionary entries)

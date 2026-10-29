@@ -1,6 +1,6 @@
 # TODO / Roadmap
 
-Status: **v0.2.0** (commit `074838a`). The holdout-leak, determinism, packaging, and evaluation-integrity fixes are complete. The items below are the remaining research, quality, and release work.
+Status: **v0.2.0 release candidate**. Four of the five P0 items are complete: the bundled dictionary is permissively licensed, corpus overlap is audited, KCC enforcement is validated against an external UAX #29 reference, and the CI workflow is updated for this release. CI verification on a real runner and publishing remain (publishing requires PyPI credentials). Items below are the remaining research, quality, and release work.
 
 Legend: **P0** = blocks a credible release · **P1** = needed for publication-grade claims · **P2** = quality/maintenance.
 
@@ -8,11 +8,11 @@ Legend: **P0** = blocks a credible release · **P1** = needed for publication-gr
 
 ## P0 — Release & correctness
 
-- [ ] **Verify CI on GitHub.** `.github/workflows/build-wheel.yml` was added but has never executed. Confirm the 3.10–3.13 matrix, Ruff, mypy, wheel/sdist inspection, isolated install, and from-wheel seed rebuild all pass on a real runner.
-- [ ] **Tag and publish `v0.2.0`.** Run the `publishing.md` checklist, upload to TestPyPI, install from TestPyPI in a clean environment, then publish to PyPI and create the GitHub release (the workflow attaches artifacts on `release: published`).
-- [ ] **Resolve the bundled-dictionary license conflict.** The code is MIT, but the shipped `system_khmer.dic` is built from CC BY-NC-SA (khPOS, ALT) and research-only (RAC 2022) data. Either ship a permissively licensed default dictionary + fetch-on-demand full build, or make the non-commercial restriction explicit at install/first-run. Current LICENSE note is not sufficient for commercial users.
-- [ ] **Audit remaining corpora for train/test overlap.** The khPOS leak is fixed; ALT NOVA and RAC have not been checked for duplicate or near-duplicate sentences. Add a `kroch-chhmar audit-overlap` command or scripted report (exact + normalized hash + optional MinHash).
-- [ ] **Independent KCC validation.** The 0.00% violation rate is enforced by `enforce_kcc_boundaries`, so it is a self-check. Validate the same outputs with an external KCC reference implementation or a hand-audited sample, and report it as an independent check.
+- [ ] **Verify CI on GitHub.** `.github/workflows/build-wheel.yml` now runs the 3.10–3.13 matrix, Ruff, mypy, wheel/sdist inspection, isolated install, and a from-wheel permissive seed rebuild. The release push is the first real-runner verification; record the Actions run URL here once it passes.
+- [ ] **Tag and publish `v0.2.0`.** The release is prepared but publishing is blocked on PyPI credentials. Once a token is available: run the `publishing.md` checklist, upload to TestPyPI, install from TestPyPI in a clean environment, then publish to PyPI and create the GitHub release (the workflow attaches artifacts on `release: published`).
+- [x] **Resolve the bundled-dictionary license conflict.** The wheel now ships a **permissive** 35,883-entry dictionary built only from MIT-licensed seed data + SIL `khmerlbdict`. The full research build (`prepare --profile full`, 87,119 entries, khPOS/ALT/RAC) is opt-in and local-only. `LICENSE`, `README.md`, `publishing.md`, and `user_dic.md` document the split; `scripts/rebuild_bundled.sh` reproduces the bundled artifact.
+- [x] **Audit remaining corpora for train/test overlap.** Added `kroch-chhmar audit-overlap` with normalized exact keys and MinHash/LSH near-duplicate detection. Results: khPOS train→OPEN 15 exact / 90 near at 0.8, train→CLOSE 1,016 exact (holdout-filtered) / 0 near; ALT internal 4 exact groups / 0 near; ALT↔khPOS 0 exact / 0 near; RAC 38,694 unique headwords, 0 exact duplicates, 826 morphological near pairs. See `data_audit.md`.
+- [x] **Independent KCC validation.** Added `tests/test_kcc_reference.py`, which compares `iter_kccs()` with the third-party `regex` module's UAX #29 `\X` grapheme clusters on a hand-audited fixture, on tokenizer spans in Modes A/B/C, and on all 14,000 normalized khPOS sentences (0 disagreements across 363,297 clusters).
 
 ## P1 — Evaluation & research
 
@@ -51,4 +51,6 @@ Legend: **P0** = blocks a credible release · **P1** = needed for publication-gr
 
 Full 14k khPOS corpus (mostly in-sample): **95.52% Mode C / 92.08% Mode A**.
 
-Quality gates: `pytest` (37 tests), `ruff check src tests example`, `mypy src/kroch_chhmar`, deterministic `prepare`, isolated-wheel seed rebuild (213 entries). See `evaluation.md` §6 for the reproducibility checklist.
+Quality gates: `pytest` (63 tests, including the `regex` KCC reference), `ruff check src tests example scripts`, `mypy src/kroch_chhmar`, deterministic `prepare`, and an isolated-wheel permissive seed rebuild. See `evaluation.md` §6 for the reproducibility checklist.
+
+> **Metric scope:** the table above is the **full research build** (`--profile full`, local only). The wheel ships the **permissive** build: OPEN C 77.57% / A 64.40%, CLOSE C 77.15% / A 63.95%, KCC 0.00%. Do not cite the research numbers for the bundled default.

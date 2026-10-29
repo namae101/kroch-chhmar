@@ -61,7 +61,13 @@ THIRD-PARTY SOFTWARE & DATASET NOTICES
      * License / Terms: Research and non-commercial use only
 
 4. Bundled Compiled Dictionary Notice
-   The pre-compiled `system_khmer.dic` shipped in the wheel is derived from the
-   khPOS, NICT ALT NOVA, khmerlbdict, and RAC 2022 datasets listed above. It is
-   provided for research and non-commercial use only. Commercial users should
-   rebuild a dictionary from permissively licensed or proprietary corpora.
+   The pre-compiled `system_khmer.dic` shipped in the wheel is built only from
+   MIT-licensed sources: the project's own seed lexicon/corpus (MIT) and SIL
+   International's `khmerlbdict` wordlists (MIT). It is redistributable under
+   the MIT terms above.
+
+   The optional full research build (`kroch-chhmar prepare --profile full`)
+   additionally ingests khPOS (CC BY-NC-SA 4.0), NICT ALT NOVA (CC BY-NC-SA 4.0),
+   and the RAC 2022 dictionary (research/non-commercial terms). That build is
+   not included in the wheel and must not be redistributed or used commercially
+   without permission from the upstream rights holders.

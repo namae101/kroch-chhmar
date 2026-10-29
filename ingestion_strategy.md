@@ -158,7 +158,7 @@ Implemented in [`_coeng_da()`](src/kroch_chhmar/normalizer.py#L335-L360), [`gene
 
 ## 3. Overview of Ingested Datasets
 
-`kroch-chhmar` combines **four public Khmer lexical and corpus resources** (plus the built-in `data/seed/` dataset), which fall into two distinct categories:
+The **full research profile** (`prepare --profile full`, the default) combines **four public Khmer lexical and corpus resources** plus the built-in `data/seed/` dataset, which fall into two distinct categories. The **permissive profile** (`prepare --profile permissive`, used for the wheel) intentionally ingests only the seed data and `khmerlbdict_*.tsv`; it skips khPOS, ALT, and RAC because their upstream terms are non-commercial.
 
 | Dataset Key | Source | Size | Category | Primary Role in `kroch-chhmar` |
 | :--- | :--- | :--- | :--- | :--- |
@@ -191,7 +191,7 @@ Implemented in [`ingest_segmented_text_file()`](src/kroch_chhmar/ingest/local_im
      - **Full surface form** (`ធម្មជាតិ`, `លោកស្រី`) in the sentence stream (`Mode B` if 2 parts, `Mode C` if $\ge 3$ parts) inside `splitter.overrides`.
      - **Constituent base words** (`ធម្ម`, `ជាតិ`, `លោក`, `ស្រី`) in `splitter.base_vocab` so `Mode A` decomposes them cleanly into root words.
 3. **Held-Out Evaluation Protection**:
-   - `khpos_open_test.pos` and `khpos_close_test.pos` are automatically skipped during default `kroch-chhmar prepare` so benchmark evaluations remain strictly held out.
+   - `khpos_open_test.pos` and `khpos_close_test.pos` are automatically skipped during `kroch-chhmar prepare --profile full` so benchmark evaluations remain strictly held out. The permissive profile never auto-ingests khPOS, so auto-holdout is disabled there.
 
 ### Stage 2: Compound-Aligned `NICT ALT NOVA` Ingestion
 Implemented in [`ingest_alt_nova_files()`](src/kroch_chhmar/ingest/local_importers.py):
@@ -228,8 +228,10 @@ where:
 - $V = \text{vocab\_size} \approx 82,500$.
 
 > [!IMPORTANT]
-> **Why unsegmented wordlist frequencies (`khmerlbdict`) must not be added to $N$:**
+> **Why unsegmented wordlist frequencies (`khmerlbdict`) must not be added to $N$ in the full profile:**
 > `khmerlbdict` (`seafreq`, `KHSV`, `KHOV`) contains $8,643,616$ raw counts—**16× larger** than $N$. Adding those counts into $N$ divides every real `khPOS`/`ALT` word's probability by 16, adding a constant $+500 \cdot \ln(16) \approx +1,386$ penalty to every corpus word and pushing rare corpus words ($6,500 \to 7,886$) above the OOV threshold ($7,500$). Keeping external wordlists at $C(w) = 0$ preserves exact sentence-corpus NLL probabilities.
+>
+> The **permissive profile** has no sentence corpus to calibrate against, so it deliberately keeps the `khmerlbdict` counts as emission-cost evidence (`ingest_lexicon_tsv(..., use_frequencies=True)`). This is why its output is a coverage baseline rather than a corpus-calibrated research dictionary.
 
 Under this calibrated scale:
 - **High-frequency corpus words** ($C = 1,000$, e.g. `នៅ`, `ក្នុង`, `មាន`): $\text{WordCost} \approx \mathbf{3,180}$

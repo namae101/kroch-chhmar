@@ -1,6 +1,6 @@
 # TODO / Roadmap
 
-Status: **v0.2.0 release candidate**. All five P0 items are implemented and CI passes on Python 3.10–3.13. The remaining P0 step is the PyPI upload (blocked on credentials). Items below are the remaining research, quality, and release work.
+Status: **v0.2.0 tagged and released on GitHub**. All five P0 items are implemented and CI passes on Python 3.10–3.13. The only remaining P0 step is the PyPI upload (blocked on credentials). Items below are the remaining research, quality, and release work.
 
 Legend: **P0** = blocks a credible release · **P1** = needed for publication-grade claims · **P2** = quality/maintenance.
 
@@ -9,7 +9,7 @@ Legend: **P0** = blocks a credible release · **P1** = needed for publication-gr
 ## P0 — Release & correctness
 
 - [x] **Verify CI on GitHub.** [Run 40821833829](https://github.com/namae101/kroch-chhmar/actions/runs/40821833829) passes the 3.10–3.13 test matrix (Ruff, mypy, 63 tests), wheel/sdist inspection, isolated wheel install, and the from-wheel permissive seed rebuild.
-- [ ] **Tag and publish `v0.2.0`.** The release is prepared but publishing is blocked on PyPI credentials. Once a token is available: run the `publishing.md` checklist, upload to TestPyPI, install from TestPyPI in a clean environment, then publish to PyPI and create the GitHub release (the workflow attaches artifacts on `release: published`).
+- [ ] **Publish `v0.2.0` to PyPI.** The `v0.2.0` tag and [GitHub release](https://github.com/namae101/kroch-chhmar/releases/tag/v0.2.0) are published, with the wheel and sdist attached. PyPI upload is blocked because no token is available in the environment. Once a token is provided: follow `publishing.md` §Step 4–5, upload to TestPyPI, install from TestPyPI in a clean environment, then publish to PyPI.
 - [x] **Resolve the bundled-dictionary license conflict.** The wheel now ships a **permissive** 35,883-entry dictionary built only from MIT-licensed seed data + SIL `khmerlbdict`. The full research build (`prepare --profile full`, 87,119 entries, khPOS/ALT/RAC) is opt-in and local-only. `LICENSE`, `README.md`, `publishing.md`, and `user_dic.md` document the split; `scripts/rebuild_bundled.sh` reproduces the bundled artifact.
 - [x] **Audit remaining corpora for train/test overlap.** Added `kroch-chhmar audit-overlap` with normalized exact keys and MinHash/LSH near-duplicate detection. Results: khPOS train→OPEN 15 exact / 90 near at 0.8, train→CLOSE 1,016 exact (holdout-filtered) / 0 near; ALT internal 4 exact groups / 0 near; ALT↔khPOS 0 exact / 0 near; RAC 38,694 unique headwords, 0 exact duplicates, 826 morphological near pairs. See `data_audit.md`.
 - [x] **Independent KCC validation.** Added `tests/test_kcc_reference.py`, which compares `iter_kccs()` with the third-party `regex` module's UAX #29 `\X` grapheme clusters on a hand-audited fixture, on tokenizer spans in Modes A/B/C, and on all 14,000 normalized khPOS sentences (0 disagreements across 363,297 clusters).

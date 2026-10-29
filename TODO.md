@@ -1,6 +1,6 @@
 # TODO / Roadmap
 
-Status: **v0.2.0 release candidate**. Four of the five P0 items are complete: the bundled dictionary is permissively licensed, corpus overlap is audited, KCC enforcement is validated against an external UAX #29 reference, and the CI workflow is updated for this release. CI verification on a real runner and publishing remain (publishing requires PyPI credentials). Items below are the remaining research, quality, and release work.
+Status: **v0.2.0 release candidate**. All five P0 items are implemented and CI passes on Python 3.10–3.13. The remaining P0 step is the PyPI upload (blocked on credentials). Items below are the remaining research, quality, and release work.
 
 Legend: **P0** = blocks a credible release · **P1** = needed for publication-grade claims · **P2** = quality/maintenance.
 
@@ -8,7 +8,7 @@ Legend: **P0** = blocks a credible release · **P1** = needed for publication-gr
 
 ## P0 — Release & correctness
 
-- [ ] **Verify CI on GitHub.** `.github/workflows/build-wheel.yml` now runs the 3.10–3.13 matrix, Ruff, mypy, wheel/sdist inspection, isolated install, and a from-wheel permissive seed rebuild. The release push is the first real-runner verification; record the Actions run URL here once it passes.
+- [x] **Verify CI on GitHub.** [Run 40821833829](https://github.com/namae101/kroch-chhmar/actions/runs/40821833829) passes the 3.10–3.13 test matrix (Ruff, mypy, 63 tests), wheel/sdist inspection, isolated wheel install, and the from-wheel permissive seed rebuild.
 - [ ] **Tag and publish `v0.2.0`.** The release is prepared but publishing is blocked on PyPI credentials. Once a token is available: run the `publishing.md` checklist, upload to TestPyPI, install from TestPyPI in a clean environment, then publish to PyPI and create the GitHub release (the workflow attaches artifacts on `release: published`).
 - [x] **Resolve the bundled-dictionary license conflict.** The wheel now ships a **permissive** 35,883-entry dictionary built only from MIT-licensed seed data + SIL `khmerlbdict`. The full research build (`prepare --profile full`, 87,119 entries, khPOS/ALT/RAC) is opt-in and local-only. `LICENSE`, `README.md`, `publishing.md`, and `user_dic.md` document the split; `scripts/rebuild_bundled.sh` reproduces the bundled artifact.
 - [x] **Audit remaining corpora for train/test overlap.** Added `kroch-chhmar audit-overlap` with normalized exact keys and MinHash/LSH near-duplicate detection. Results: khPOS train→OPEN 15 exact / 90 near at 0.8, train→CLOSE 1,016 exact (holdout-filtered) / 0 near; ALT internal 4 exact groups / 0 near; ALT↔khPOS 0 exact / 0 near; RAC 38,694 unique headwords, 0 exact duplicates, 826 morphological near pairs. See `data_audit.md`.

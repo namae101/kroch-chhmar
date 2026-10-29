@@ -51,6 +51,9 @@ jobs:
     name: Build & Verify Wheel
     needs: test
     runs-on: ubuntu-latest
+    permissions:
+      # Required by softprops/action-gh-release to attach artifacts to a release.
+      contents: write
 
     steps:
       - name: Checkout repository
